@@ -1,0 +1,25 @@
+# Scenario 2 — ImagePullBackOff (wrong image tag)
+# Expected diagnosis: non-existent image tag; fix = update the deployment image.
+#
+#   kubectl create namespace failure-lab
+#   kubectl apply -f test-scenarios/02-imagepullbackoff.yaml
+#   ...run an investigation from the dashboard...
+#   kubectl delete namespace failure-lab
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-frontend
+  namespace: failure-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-frontend
+  template:
+    metadata:
+      labels:
+        app: web-frontend
+    spec:
+      containers:
+        - name: web-frontend
+          image: nginx:1.99-does-not-exist

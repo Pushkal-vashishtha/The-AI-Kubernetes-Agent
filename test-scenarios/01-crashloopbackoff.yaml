@@ -1,0 +1,29 @@
+# Scenario 1 — CrashLoopBackOff (missing environment variable)
+# Expected diagnosis: missing DATABASE_URL env var; fix = add the variable.
+#
+#   kubectl create namespace failure-lab
+#   kubectl apply -f test-scenarios/01-crashloopbackoff.yaml
+#   ...run an investigation from the dashboard...
+#   kubectl delete namespace failure-lab
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: failure-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: busybox
+          command:
+            - sh
+            - -c
+            - 'echo "FATAL: DATABASE_URL environment variable is missing - cannot start payment service"; sleep 3; exit 1'

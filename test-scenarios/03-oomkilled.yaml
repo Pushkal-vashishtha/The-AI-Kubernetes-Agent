@@ -1,0 +1,32 @@
+# Scenario 3 — OOMKilled (memory limit too low)
+# Expected diagnosis: container exceeds its memory limit; fix = raise limits.
+#
+#   kubectl create namespace failure-lab
+#   kubectl apply -f test-scenarios/03-oomkilled.yaml
+#   ...run an investigation from the dashboard...
+#   kubectl delete namespace failure-lab
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-service
+  namespace: failure-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache-service
+  template:
+    metadata:
+      labels:
+        app: cache-service
+    spec:
+      containers:
+        - name: cache-service
+          image: busybox
+          # Consumes memory without bound; the 16Mi limit OOM-kills it fast.
+          command: ["sh", "-c", "tail /dev/zero"]
+          resources:
+            requests:
+              memory: 8Mi
+            limits:
+              memory: 16Mi

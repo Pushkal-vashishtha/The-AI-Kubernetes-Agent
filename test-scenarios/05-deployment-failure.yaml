@@ -1,0 +1,39 @@
+# Scenario 5 — Deployment failure (readiness probe never passes)
+# Expected diagnosis: rollout stuck because the readiness probe checks the
+# wrong port; pods run but never become Ready, so the deployment reports
+# 0/1 available and eventually ProgressDeadlineExceeded.
+# Fix = point the probe at the port the container actually listens on.
+#
+#   kubectl create namespace failure-lab
+#   kubectl apply -f test-scenarios/05-deployment-failure.yaml
+#   ...run an investigation from the dashboard...
+#   kubectl delete namespace failure-lab
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-service
+  namespace: failure-lab
+spec:
+  replicas: 1
+  # Fail the rollout quickly so the demo doesn't wait 10 minutes.
+  progressDeadlineSeconds: 60
+  selector:
+    matchLabels:
+      app: checkout-service
+  template:
+    metadata:
+      labels:
+        app: checkout-service
+    spec:
+      containers:
+        - name: checkout-service
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          # Wrong on purpose: nginx listens on 80, the probe checks 8080.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5

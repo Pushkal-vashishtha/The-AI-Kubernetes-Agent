@@ -1,0 +1,32 @@
+services:
+  backend:
+    build: ./backend
+    container_name: ai-k8s-agent-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      # Optional: create backend/.env from backend/.env.example
+      - path: ./backend/.env
+        required: false
+    # The backend image ships with kubectl. To let the CONTAINER reach a
+    # cluster, mount a kubeconfig whose server address is reachable from
+    # inside Docker (see README "Cluster access"), then uncomment:
+    # volumes:
+    #   - ${USERPROFILE}/.kube/config:/root/.kube/config:ro
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the frontend bundle at build time.
+        # VITE_INSFORGE_* values come from the .env file next to this compose file.
+        VITE_API_BASE_URL: http://localhost:8000
+        VITE_INSFORGE_URL: ${VITE_INSFORGE_URL:-}
+        VITE_INSFORGE_ANON_KEY: ${VITE_INSFORGE_ANON_KEY:-}
+    container_name: ai-k8s-agent-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

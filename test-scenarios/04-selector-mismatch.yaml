@@ -1,0 +1,41 @@
+# Scenario 4 — Service selector mismatch (wrong labels)
+# Expected diagnosis: service selector matches no pods; fix = update the selector.
+# The pods themselves are healthy — this failure is only visible in networking.
+#
+#   kubectl create namespace failure-lab
+#   kubectl apply -f test-scenarios/04-selector-mismatch.yaml
+#   ...run an investigation from the dashboard...
+#   kubectl delete namespace failure-lab
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  namespace: failure-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-server-v2
+  template:
+    metadata:
+      labels:
+        app: api-server-v2
+    spec:
+      containers:
+        - name: api-server
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-server
+  namespace: failure-lab
+spec:
+  # Wrong on purpose: the pods are labeled app=api-server-v2
+  selector:
+    app: api-server
+  ports:
+    - port: 80
+      targetPort: 80
