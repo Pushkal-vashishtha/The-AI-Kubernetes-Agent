@@ -468,6 +468,33 @@ setup:
 The frontend is built on GitHub's runners — never on the 1 GB instance —
 and production ships the exact artifact CI verified.
 
+**Adding more clusters to the picker**: the UI lists whatever contexts exist
+in the kubeconfig at `KUBECONFIG_PATH` — there is no app-side cluster config.
+Give the backend its own copy so k3s's file stays untouched:
+
+```bash
+mkdir -p ~/.kube
+cp /etc/rancher/k3s/k3s.yaml ~/.kube/aika-config
+chmod 600 ~/.kube/aika-config
+KUBECONFIG=~/.kube/aika-config kubectl config rename-context default aws-k3s
+```
+
+Set `KUBECONFIG_PATH=/home/ubuntu/.kube/aika-config` in `backend/.env` and
+`sudo systemctl restart aika-backend`. To add another cluster later, copy its
+kubeconfig to the box, rename its context to something unique, merge —
+
+```bash
+KUBECONFIG=~/.kube/aika-config:/tmp/other.yaml \
+  kubectl config view --flatten > ~/.kube/merged
+mv ~/.kube/merged ~/.kube/aika-config && chmod 600 ~/.kube/aika-config
+```
+
+— and restart the backend. Remote-cluster gotchas: its `server:` URL must be
+reachable *from this instance* (never `127.0.0.1`), and its TLS cert must
+include that address (k3s: install with `--tls-san <public-ip>`). Note the
+copied config embeds client certs that k3s rotates ~yearly — re-copy if auth
+errors appear long after setup.
+
 **Pausing (e.g. saving free-tier hours)**: EC2 console → Stop instance.
 Everything (k3s, backend, Caddy) is systemd-enabled and comes back on Start
 by itself — the only manual step is updating DuckDNS with the instance's new
