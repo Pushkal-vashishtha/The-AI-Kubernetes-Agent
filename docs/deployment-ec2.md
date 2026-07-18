@@ -455,7 +455,15 @@ setup:
    - **Variables** `EC2_HOST` (the DuckDNS hostname, so IP changes don't
      break CI), `VITE_API_BASE_URL`, `VITE_INSFORGE_URL`,
      `VITE_INSFORGE_ANON_KEY`.
-3. Push to `main` and watch the **Actions** tab.
+3. **Security group**: change the SSH rule's source from "My IP" to
+   `0.0.0.0/0` — GitHub-hosted runners have no fixed IP, so a My-IP rule
+   blocks the deploy job at `ssh-keyscan`. This is acceptable because the
+   instance is key-auth only (EC2 Ubuntu disables password login), so an
+   open port 22 can be knocked on but not entered. The stricter alternatives
+   — AWS SSM Session Manager instead of SSH, or a workflow step that
+   temporarily allowlists the runner's IP via the AWS API — are good
+   interview answers and overkill for a demo box.
+4. Push to `main` and watch the **Actions** tab.
 
 The frontend is built on GitHub's runners — never on the 1 GB instance —
 and production ships the exact artifact CI verified.
