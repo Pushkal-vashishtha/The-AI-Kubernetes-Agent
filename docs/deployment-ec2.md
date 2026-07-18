@@ -238,14 +238,21 @@ INSFORGE_API_KEY=<from local backend/.env>
 > `scp -i D:\Devops\keys\ai-k8s-agent-key.pem D:\Devops\ai-kubernetes-agent\backend\.env ubuntu@<PUBLIC-IP>:~/The-AI-Kubernetes-Agent/backend/.env`
 > Never commit these files — the repo's `.gitignore` already blocks them.
 
-Smoke test:
+Smoke test (the `sleep` gives the server a moment to bind the port before
+curl hits it):
 
 ```bash
 node src/server.js &
+sleep 2
 curl -s localhost:8000/health
-# {"status":"ok",...}
+echo
 kill %1
 ```
+
+Expected: the server's "listening on port 8000" log line, then
+`{"status":"healthy","service":"ai-kubernetes-agent"}`. If instead node
+prints a stack trace, read it — the
+usual culprits are a missing `npm install` or a missing/typo'd `.env`.
 
 ## Step 8 — Backend as a systemd service
 
@@ -278,7 +285,7 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable --now aika-backend
 systemctl status aika-backend        # active (running)
-curl -s localhost:8000/health        # {"status":"ok",...}
+curl -s localhost:8000/health        # {"status":"healthy",...}
 ```
 
 Logs whenever you need them: `journalctl -u aika-backend -f`
