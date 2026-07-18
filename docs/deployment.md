@@ -42,6 +42,11 @@ resume line. Nothing new to build.
 Best effort-to-impressiveness ratio: one small VM runs a real Kubernetes
 cluster **and** the app, so your live demo investigates a real cluster.
 
+> **Doing this on AWS EC2?** There's a full copy-paste walkthrough in
+> [deployment-ec2.md](deployment-ec2.md) — instance launch, k3s, systemd,
+> DuckDNS + Caddy HTTPS, seeding, costs, and teardown. The outline below is
+> the provider-agnostic short version.
+
 1. Get a small VM (EC2 t3.small / Lightsail / Hetzner CX22, Ubuntu 24.04).
 2. Install **k3s** (a real, CNCF-certified lightweight Kubernetes):
 

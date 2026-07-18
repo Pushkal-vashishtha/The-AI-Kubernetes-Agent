@@ -311,4 +311,5 @@ The project was built in five verified stages:
 3. ✅ AI reasoning via OpenRouter (InsForge key) — root cause, fix, confidence
 4. ✅ Dashboard: InsForge auth, realtime progress, diagnosis card, history
 5. ✅ Integration testing, reliability, multi-cluster picker (kubeconfig contexts)
-6. ⏳ Deployment ([docs/deployment.md](docs/deployment.md)) and future scope above
+6. ⏳ Deployment ([docs/deployment.md](docs/deployment.md), step-by-step EC2
+   guide: [docs/deployment-ec2.md](docs/deployment-ec2.md)) and future scope above
