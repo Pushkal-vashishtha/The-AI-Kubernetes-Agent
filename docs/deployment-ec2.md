@@ -436,6 +436,30 @@ cd backend && npm install && sudo systemctl restart aika-backend
 Frontend changed? Rebuild on your laptop and `scp` the `dist/` up again
 (Step 10), then re-run the `cp` into `/var/www/aika`.
 
+**Or skip all of that — CI/CD** (see
+[.github/workflows/deploy.yml](../.github/workflows/deploy.yml)): every push
+to `main` runs a build/typecheck job on GitHub's runners, and if it passes,
+deploys over SSH — pulls the repo on the instance, reinstalls backend deps,
+restarts `aika-backend`, health-checks it, and atomically swaps the frontend
+(previous build kept at `/var/www/aika-old` for instant rollback). One-time
+setup:
+
+1. Generate a dedicated deploy key pair (do **not** reuse the AWS `.pem`):
+   `ssh-keygen -t ed25519 -C github-actions-deploy -N "" -f aika-deploy-key`,
+   and append `aika-deploy-key.pub` to `~/.ssh/authorized_keys` on the
+   instance. (Windows gotcha: transfer the `.pub` with `scp`, not by piping
+   text through PowerShell — the pipe adds `\r` line endings that make sshd
+   silently reject the key.)
+2. GitHub repo → **Settings → Secrets and variables → Actions**:
+   - **Secret** `EC2_SSH_KEY` — full contents of the private key file.
+   - **Variables** `EC2_HOST` (the DuckDNS hostname, so IP changes don't
+     break CI), `VITE_API_BASE_URL`, `VITE_INSFORGE_URL`,
+     `VITE_INSFORGE_ANON_KEY`.
+3. Push to `main` and watch the **Actions** tab.
+
+The frontend is built on GitHub's runners — never on the 1 GB instance —
+and production ships the exact artifact CI verified.
+
 **Pausing (e.g. saving free-tier hours)**: EC2 console → Stop instance.
 Everything (k3s, backend, Caddy) is systemd-enabled and comes back on Start
 by itself — the only manual step is updating DuckDNS with the instance's new
