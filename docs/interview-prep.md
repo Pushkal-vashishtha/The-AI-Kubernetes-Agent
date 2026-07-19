@@ -4,6 +4,11 @@ How to present this project in SDE and DevOps interviews: the pitch, the
 walkthrough, and the questions you will actually get — with the answers this
 codebase backs up.
 
+> Studying the system itself (diagrams, layer-by-layer deep dives, the
+> production/CI-CD story, all war stories, and a 7-session prep plan)?
+> Start with [project-mastery.md](project-mastery.md) — this doc is the
+> Q&A drill companion to it.
+
 ## The 30-second pitch
 
 > "I built an AI agent that troubleshoots Kubernetes clusters on demand. You

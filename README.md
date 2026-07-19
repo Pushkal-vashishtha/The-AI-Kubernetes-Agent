@@ -228,7 +228,11 @@ produce the expected AI diagnosis:
 | `05-deployment-failure.yaml`  | Readiness probe wrong port | Rollout stuck, probe fails |
 
 For a step-by-step live-demo script (timing, narration tips, gotchas), see
-[docs/demo-runbook.md](docs/demo-runbook.md).
+[docs/demo-runbook.md](docs/demo-runbook.md). To learn the whole system end
+to end — architecture diagrams, design decisions, deployment/CI-CD
+internals, and every war story — see
+[docs/project-mastery.md](docs/project-mastery.md) with
+[docs/interview-prep.md](docs/interview-prep.md) as the Q&A drill companion.
 
 ```bash
 kubectl create namespace failure-lab
