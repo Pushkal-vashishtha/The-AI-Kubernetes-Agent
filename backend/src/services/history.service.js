@@ -4,12 +4,19 @@
 import insforgeAdmin from "../core/insforge.js";
 import logger from "../core/logger.js";
 
-export async function createInvestigationRecord(userId, progress, cluster = null) {
+export async function createInvestigationRecord(
+  userId,
+  progress,
+  cluster = null,
+  clusterId = null,
+) {
   if (!insforgeAdmin) return null;
 
   const { data, error } = await insforgeAdmin.database
     .from("investigations")
-    .insert([{ user_id: userId, status: "running", progress, cluster }])
+    .insert([
+      { user_id: userId, status: "running", progress, cluster, cluster_id: clusterId },
+    ])
     .select();
 
   if (error) {

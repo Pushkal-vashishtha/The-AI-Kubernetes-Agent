@@ -7,39 +7,119 @@ import {
   createInvestigationRecord,
   updateInvestigationRecord,
 } from "../services/history.service.js";
-import { listClusters } from "../kubernetes/cluster.inspector.js";
+import {
+  listUserClusters,
+  getUserCluster,
+  findUserClusterByContext,
+} from "../services/cluster.service.js";
 import { requireAuth } from "./auth.middleware.js";
 import logger from "../core/logger.js";
 
 const router = Router();
 
-router.get("/clusters", requireAuth, async (_req, res) => {
-  const { clusters, current_context, error } = await listClusters();
-  res.json({ status: error ? "error" : "success", clusters, current_context, error });
+/**
+ * Shape a cluster row for the frontend. `context`/`cluster`/`current` are the
+ * legacy fields the current UI keys on; `id`/`mode`/`status` are what it will
+ * move to. Agent clusters have no kubeconfig context, so they borrow their
+ * name as a stable key.
+ */
+function toClusterResponse(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    mode: row.mode,
+    status: row.status,
+    distro: row.distro,
+    agent_version: row.agent_version,
+    last_seen_at: row.last_seen_at,
+    // legacy fields
+    context: row.context ?? row.name,
+    cluster: row.name,
+    current: false,
+  };
+}
+
+router.get("/clusters", requireAuth, async (req, res) => {
+  const { clusters, error } = await listUserClusters(req.user.id);
+  const shaped = clusters.map(toClusterResponse);
+
+  res.json({
+    status: error ? "error" : "success",
+    clusters: shaped,
+    // Kept for the current UI's default-selection logic: the single local
+    // cluster if there is exactly one, otherwise no default.
+    current_context: shaped.length === 1 ? shaped[0].context : null,
+    error,
+  });
 });
 
-router.post("/investigate", requireAuth, async (req, res) => {
-  const requestedContext = req.body?.context;
+/**
+ * Resolve the cluster a request is aimed at, enforcing ownership.
+ * Returns { cluster } or { error: { code, message } }.
+ */
+async function resolveTargetCluster(userId, body) {
+  const { cluster_id: clusterId, context } = body ?? {};
 
-  // Only accept contexts that actually exist in the kubeconfig.
-  const { clusters, current_context } = await listClusters();
-  let context;
-  if (requestedContext != null) {
-    if (!clusters.some((c) => c.context === requestedContext)) {
-      return res.status(400).json({
-        status: "error",
-        message: `Unknown cluster "${requestedContext}" — it is not in the kubeconfig on the backend.`,
-      });
+  if (clusterId) {
+    const cluster = await getUserCluster(userId, clusterId);
+    // Unknown and not-yours are deliberately the same answer, so cluster ids
+    // belonging to other users cannot be probed for existence.
+    if (!cluster) {
+      return { error: { code: 404, message: "Cluster not found." } };
     }
-    context = requestedContext;
+    return { cluster };
   }
 
+  if (context) {
+    const cluster = await findUserClusterByContext(userId, context);
+    if (!cluster) {
+      return {
+        error: {
+          code: 404,
+          message: `Cluster "${context}" is not registered to your account.`,
+        },
+      };
+    }
+    return { cluster };
+  }
+
+  // Nothing specified: only unambiguous when the user owns exactly one.
+  const { clusters } = await listUserClusters(userId);
+  if (clusters.length === 1) return { cluster: clusters[0] };
+
+  return {
+    error: {
+      code: 400,
+      message: clusters.length
+        ? "Pick which cluster to investigate."
+        : "No clusters registered to your account yet.",
+    },
+  };
+}
+
+router.post("/investigate", requireAuth, async (req, res) => {
+  const { cluster, error: resolveError } = await resolveTargetCluster(req.user.id, req.body);
+  if (resolveError) {
+    return res
+      .status(resolveError.code)
+      .json({ status: "error", message: resolveError.message });
+  }
+
+  // Agent-backed clusters are collected by an in-cluster agent (a later
+  // phase). Until then, only local kubeconfig clusters can be investigated.
+  if (cluster.mode !== "local") {
+    return res.status(501).json({
+      status: "error",
+      message: `Cluster "${cluster.name}" is agent-based; remote collection is not enabled yet.`,
+    });
+  }
+
+  const context = cluster.context ?? undefined;
   const progress = buildInitialProgress();
-  const cluster = context ?? current_context ?? null;
 
   // History row is created up front; every progress update to it is
   // published to the user's realtime channel by a database trigger.
-  const record = await createInvestigationRecord(req.user.id, progress, cluster);
+  const record = await createInvestigationRecord(req.user.id, progress, cluster.name, cluster.id);
 
   const onProgress = async (stepKey, status) => {
     const step = progress.find((s) => s.key === stepKey);
@@ -64,7 +144,8 @@ router.post("/investigate", requireAuth, async (req, res) => {
     res.json({
       status: "success",
       investigation_id: record?.id ?? null,
-      cluster,
+      cluster: cluster.name,
+      cluster_id: cluster.id,
       diagnosis,
       ai_error,
       investigation,

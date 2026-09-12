@@ -113,3 +113,22 @@ kubectl delete namespace failure-lab
 | Scenario pod never fails | You edited the manifest command via CLI args — always `kubectl apply` the YAML (PowerShell mangles `sh -c` args) |
 | Diagnosis mixes two problems | Two scenarios applied at once — delete one, re-investigate |
 | Healthy cluster still shows issues > 0 | Recent warning events linger ~1 h; the diagnosis card will still say "No active issues detected" |
+
+## Gotcha: let a scenario settle before investigating
+
+Investigating within ~10s of `kubectl apply` can produce a weaker diagnosis
+than the scenario deserves -- the evidence is collected before Kubernetes has
+written the terminal state the reasoning depends on. Seen 2026-09-12 with
+03-oomkilled: investigated 6s after apply it came back 78% with a generic
+"crashing on startup, no logs"; once the pod had restarted twice and
+`lastState.terminated.reason=OOMKilled` was set, the same scenario diagnosed
+correctly at 95%.
+
+Rule of thumb before hitting Investigate:
+
+| Scenario | Wait for |
+| --- | --- |
+| 01 crashloop, 03 OOMKilled | `restartCount >= 2` |
+| 02 image pull | pod shows `ImagePullBackOff` (a few seconds) |
+| 04 selector mismatch | ~30s (endpoints must be published as empty) |
+| 05 deployment failure | ~90s (progressDeadlineSeconds is 60) |

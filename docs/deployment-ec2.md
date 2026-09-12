@@ -228,6 +228,7 @@ PORT=8000
 OPENROUTER_API_KEY=<from local backend/.env>
 OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
 KUBECONFIG_PATH=/etc/rancher/k3s/k3s.yaml
+LOCAL_CLUSTER_OWNER=<your InsForge user id>
 INSFORGE_URL=<from local backend/.env>
 INSFORGE_API_KEY=<from local backend/.env>
 ```
@@ -468,8 +469,23 @@ setup:
 The frontend is built on GitHub's runners — never on the 1 GB instance —
 and production ships the exact artifact CI verified.
 
-**Adding more clusters to the picker**: the UI lists whatever contexts exist
-in the kubeconfig at `KUBECONFIG_PATH` — there is no app-side cluster config.
+**`LOCAL_CLUSTER_OWNER`**: clusters are owned by users now (see
+`docs/multi-tenant-checklist.md`). The picker reads the `clusters` table, not
+the kubeconfig, so a fresh account sees an empty list. Setting this to your
+InsForge user id makes the backend register this machine's kubeconfig
+contexts as *your* clusters at boot — which is what keeps this
+single-operator deployment behaving as it always has. Find your id with:
+
+```bash
+npx @insforge/cli db query "SELECT id, email FROM auth.users" --json
+```
+
+Leave it empty once other people enrol their own clusters with an agent;
+otherwise the server's kubeconfig keeps attaching itself to that one account.
+
+**Adding more clusters to the picker**: with `LOCAL_CLUSTER_OWNER` set, the
+picker lists the contexts found in the kubeconfig at `KUBECONFIG_PATH`,
+registered to that user at startup — there is no app-side cluster config.
 Give the backend its own copy so k3s's file stays untouched:
 
 ```bash
@@ -480,7 +496,8 @@ KUBECONFIG=~/.kube/aika-config kubectl config rename-context default aws-k3s
 ```
 
 Set `KUBECONFIG_PATH=/home/ubuntu/.kube/aika-config` in `backend/.env` and
-`sudo systemctl restart aika-backend`. To add another cluster later, copy its
+`sudo systemctl restart aika-backend` (the restart is what re-syncs the
+contexts into the `clusters` table). To add another cluster later, copy its
 kubeconfig to the box, rename its context to something unique, merge —
 
 ```bash
