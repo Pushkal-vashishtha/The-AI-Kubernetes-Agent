@@ -1,0 +1,12 @@
+# Docker builds from the repo root (see backend/Dockerfile), so this is the
+# ignore file that applies -- backend/.dockerignore is no longer consulted.
+**/node_modules
+**/.env
+**/.env.*
+!**/.env.example
+**/npm-debug.log
+frontend/dist
+.git
+.github
+docs
+test-scenarios

@@ -12,6 +12,7 @@ import {
   getUserCluster,
   findUserClusterByContext,
 } from "../services/cluster.service.js";
+import { sourceForCluster } from "../services/evidence.source.js";
 import { requireAuth } from "./auth.middleware.js";
 import logger from "../core/logger.js";
 
@@ -105,16 +106,11 @@ router.post("/investigate", requireAuth, async (req, res) => {
       .json({ status: "error", message: resolveError.message });
   }
 
-  // Agent-backed clusters are collected by an in-cluster agent (a later
-  // phase). Until then, only local kubeconfig clusters can be investigated.
-  if (cluster.mode !== "local") {
-    return res.status(501).json({
-      status: "error",
-      message: `Cluster "${cluster.name}" is agent-based; remote collection is not enabled yet.`,
-    });
+  const { source, error: sourceError } = sourceForCluster(cluster);
+  if (sourceError) {
+    return res.status(sourceError.code).json({ status: "error", message: sourceError.message });
   }
 
-  const context = cluster.context ?? undefined;
   const progress = buildInitialProgress();
 
   // History row is created up front; every progress update to it is
@@ -128,7 +124,7 @@ router.post("/investigate", requireAuth, async (req, res) => {
   };
 
   try {
-    const { investigation, diagnosis, ai_error } = await investigateAndDiagnose(onProgress, context);
+    const { investigation, diagnosis, ai_error } = await investigateAndDiagnose(source, onProgress);
 
     await updateInvestigationRecord(record?.id, {
       status: diagnosis ? "completed" : "failed",

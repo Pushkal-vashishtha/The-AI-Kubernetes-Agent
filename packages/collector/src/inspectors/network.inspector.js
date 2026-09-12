@@ -1,4 +1,3 @@
-import { runKubectlJson } from "./kubectl.executor.js";
 
 function endpointsKey(namespace, name) {
   return `${namespace}/${name}`;
@@ -17,10 +16,10 @@ function summarizeEndpoints(endpoints) {
 /**
  * Inspect services, their endpoints, and cluster DNS.
  */
-export async function inspectNetwork(context) {
+export async function inspectNetwork(client) {
   const [svcResult, epResult] = await Promise.all([
-    runKubectlJson(["get", "svc", "-A"], { context }),
-    runKubectlJson(["get", "endpoints", "-A"], { context }),
+    client.listServices(),
+    client.listEndpoints(),
   ]);
 
   if (!svcResult.success) {

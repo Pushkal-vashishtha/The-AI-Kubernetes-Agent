@@ -20,11 +20,11 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: |
-            backend/package-lock.json
+            package-lock.json
             frontend/package-lock.json
 
+      # Root install covers the backend and the @aika/collector workspace.
       - name: Backend install
-        working-directory: backend
         run: npm ci
 
       - name: Frontend install
@@ -78,7 +78,8 @@ jobs:
           set -euo pipefail
           cd ~/The-AI-Kubernetes-Agent
           git pull --ff-only
-          cd backend
+          # npm workspaces: install from the repo root so the backend gets the
+          # @aika/collector package linked into the hoisted node_modules.
           npm ci --omit=dev
           sudo systemctl restart aika-backend
           sleep 3

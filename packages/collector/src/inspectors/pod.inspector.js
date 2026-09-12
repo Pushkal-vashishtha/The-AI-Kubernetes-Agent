@@ -1,4 +1,3 @@
-import { runKubectlJson } from "./kubectl.executor.js";
 
 // Waiting reasons that always indicate a problem.
 const PROBLEM_WAITING_REASONS = [
@@ -107,8 +106,8 @@ function detectProblem(pod) {
 /**
  * Inspect all pods in the cluster and flag unhealthy ones.
  */
-export async function inspectPods(context) {
-  const result = await runKubectlJson(["get", "pods", "-A"], { context });
+export async function inspectPods(client) {
+  const result = await client.listPods();
 
   if (!result.success) {
     return { healthy: null, total_pods: 0, problematic_pods: [], error: result.error };

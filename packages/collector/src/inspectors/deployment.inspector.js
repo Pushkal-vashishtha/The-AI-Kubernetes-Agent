@@ -1,4 +1,3 @@
-import { runKubectlJson } from "./kubectl.executor.js";
 
 function findCondition(deployment, type) {
   return (deployment.status?.conditions ?? []).find((c) => c.type === type);
@@ -32,8 +31,8 @@ function detectIssues(deployment) {
 /**
  * Inspect all deployments and flag the ones that are not fully healthy.
  */
-export async function inspectDeployments(context) {
-  const result = await runKubectlJson(["get", "deployments", "-A"], { context });
+export async function inspectDeployments(client) {
+  const result = await client.listDeployments();
 
   if (!result.success) {
     return { healthy: null, total_deployments: 0, unhealthy_deployments: [], error: result.error };

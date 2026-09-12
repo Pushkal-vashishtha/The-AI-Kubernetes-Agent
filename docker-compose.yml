@@ -1,6 +1,9 @@
 services:
   backend:
-    build: ./backend
+    # Context is the repo root so the @aika/collector workspace is included.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: ai-k8s-agent-backend
     ports:
       - "8000:8000"

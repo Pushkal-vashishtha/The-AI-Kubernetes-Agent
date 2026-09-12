@@ -1,4 +1,3 @@
-import { runKubectl } from "./kubectl.executor.js";
 
 const TAIL_LINES = 50;
 const MAX_RELEVANT_LINES = 20;
@@ -45,25 +44,21 @@ function extractRelevantLines(rawLogs) {
   return selected.slice(-MAX_RELEVANT_LINES);
 }
 
-async function fetchLogs(pod, { previous = false, context } = {}) {
-  const args = [
-    "logs",
-    pod.name,
-    "-n",
-    pod.namespace,
-    "--tail",
-    String(TAIL_LINES),
-    "--all-containers",
-  ];
-  if (previous) args.push("--previous");
-  return runKubectl(args, { context });
+async function fetchLogs(client, pod, { previous = false } = {}) {
+  return client.podLogs({
+    name: pod.name,
+    namespace: pod.namespace,
+    tailLines: TAIL_LINES,
+    allContainers: true,
+    previous,
+  });
 }
 
 /**
  * Collect concise, failure-focused logs for the unhealthy pods
  * found by the pod inspector.
  */
-export async function collectLogs(problematicPods = [], context) {
+export async function collectLogs(client, problematicPods = []) {
   if (problematicPods.length === 0) {
     return {
       collected: 0,
@@ -78,12 +73,12 @@ export async function collectLogs(problematicPods = [], context) {
   const logs = [];
 
   for (const pod of targets) {
-    const current = await fetchLogs(pod, { context });
+    const current = await fetchLogs(client, pod);
 
     // For crashed pods the useful output is usually in the previous run.
     let previousLines = [];
     if (CRASHED_STATUSES.includes(pod.status)) {
-      const previous = await fetchLogs(pod, { previous: true, context });
+      const previous = await fetchLogs(client, pod, { previous: true });
       if (previous.success && previous.stdout) {
         previousLines = extractRelevantLines(previous.stdout);
       }

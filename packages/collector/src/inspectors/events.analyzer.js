@@ -1,4 +1,3 @@
-import { runKubectlJson } from "./kubectl.executor.js";
 
 const MAX_FINDINGS = 30;
 
@@ -36,8 +35,8 @@ function isProblem(event) {
 /**
  * Read cluster events and summarize the ones that indicate trouble.
  */
-export async function analyzeEvents(context) {
-  const result = await runKubectlJson(["get", "events", "-A"], { context });
+export async function analyzeEvents(client) {
+  const result = await client.listEvents();
 
   if (!result.success) {
     return { healthy: null, total_events: 0, findings: [], error: result.error };

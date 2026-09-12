@@ -1,0 +1,13 @@
+{
+  "name": "ai-kubernetes-agent",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace ai-kubernetes-agent-backend",
+    "start": "npm run start --workspace ai-kubernetes-agent-backend"
+  }
+}

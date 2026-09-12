@@ -64,15 +64,21 @@ Close the ownership holes while the app still behaves exactly as it does today.
 
 ## Phase 2 — Extract the collector
 
-- [ ] Create `packages/collector/` (own `package.json`, ESM, no Express deps)
-- [ ] Move `backend/src/kubernetes/{pod,logs,events,deployment,network}.*.js` into it
-- [ ] Backend imports the package; **evidence JSON shape unchanged**
-- [ ] Define the client interface: `createKubectlClient({ context })` (today's execFile path)
-- [ ] Implement `createApiClient()` on `@kubernetes/client-node` (in-cluster ServiceAccount)
-- [ ] Both clients return identical objects (raw K8s API JSON) — inspectors untouched
-- [ ] `investigation.service.js` takes a `source` instead of a bare `context`
-- [ ] `ai/prompt.builder.js` and the rest of `ai/` must have **zero diff**
-- [ ] Re-run all 5 scenarios — byte-identical evidence vs. before the refactor
+- [x] Create `packages/collector/` (own `package.json`, ESM, no Express deps)
+- [x] Move `backend/src/kubernetes/{pod,logs,events,deployment,network}.*.js` into it
+- [x] Backend imports the package; **evidence JSON shape unchanged**
+- [x] Define the client interface: `createKubectlClient({ context })` (today's execFile path)
+- [x] Implement `createApiClient()` on `@kubernetes/client-node` (in-cluster ServiceAccount)
+- [x] Both clients return identical objects (raw K8s API JSON) — inspectors untouched
+- [x] Deploy plumbing for workspaces: Dockerfile builds from repo root, `.dockerignore`
+      moved to the context root, compose `context: .`, CI + EC2 `npm ci` at the root
+- [x] `investigation.service.js` takes a `source` instead of a bare `context`
+- [x] `ai/prompt.builder.js` and the rest of `ai/` must have **zero diff**
+- [x] Byte-identical evidence vs. before the refactor -- verified by restoring the
+      pre-refactor modules at their original paths and running old and new
+      collectors back to back against the same quiesced cluster (`diff` clean)
+- [x] Bonus: kubectl client and API client produce byte-identical evidence too,
+      so the Phase 3 agent's collection path is already proven
 
 ---
 
