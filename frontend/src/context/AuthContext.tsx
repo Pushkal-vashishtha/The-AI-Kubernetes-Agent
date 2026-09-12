@@ -27,15 +27,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const tokenRef = useRef<string | null>(null);
 
-  // Cold load: rehydrate the session from the httpOnly refresh cookie.
+  // Cold load: rehydrate the session.
+  //
+  // Must go through getCurrentUser(), not refreshSession(): after an OAuth
+  // redirect the SDK finds `insforge_code` in the URL and exchanges it for a
+  // session *asynchronously* on client construction. getCurrentUser() awaits
+  // that exchange; refreshSession() races it, and on a lost race the user
+  // lands back on the login page with no session. getCurrentUser() falls back
+  // to the httpOnly refresh cookie on a normal load, so the non-OAuth path is
+  // unchanged.
   useEffect(() => {
     let cancelled = false;
 
     async function hydrate() {
-      const { data } = await insforge.auth.refreshSession();
+      const { data } = await insforge.auth.getCurrentUser();
       if (cancelled) return;
-      if (data?.accessToken && data.user) {
-        tokenRef.current = data.accessToken;
+      if (data?.user) {
         setUser({ id: data.user.id, email: data.user.email ?? "" });
       }
       setLoading(false);
@@ -45,6 +52,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Keep React in step with sessions the SDK establishes on its own -- the
+  // OAuth code exchange is the one that matters here.
+  useEffect(() => {
+    return insforge.auth.onAuthStateChange(() => {
+      void insforge.auth.getCurrentUser().then(({ data }) => {
+        if (data?.user) {
+          setUser({ id: data.user.id, email: data.user.email ?? "" });
+        } else {
+          tokenRef.current = null;
+          setUser(null);
+        }
+      });
+    });
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {

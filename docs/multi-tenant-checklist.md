@@ -40,10 +40,25 @@ Close the ownership holes while the app still behaves exactly as it does today.
 ### Verification
 - [x] Sign in as user A → sees their clusters; user B → empty list
 - [x] User B investigating user A's `cluster_id` → 404 (verified 2026-09-12)
-- [~] EC2 demo still investigates the k3s cluster end to end
+- [x] EC2 demo still investigates the k3s cluster end to end
   - [x] `LOCAL_CLUSTER_OWNER` set in the instance's `backend/.env` (2026-09-12, ahead of the deploy; box has one context, `aws-k3s`)
-  - [ ] Deploy Phase 1 code and re-verify the picker + an investigation on the live site
+  - [x] Deployed dcfdaad 2026-09-12; boot sync registered `aws-k3s`; live `GET /clusters` + `POST /investigate` verified against the real k3s cluster (reachable, 0 issues, healthy)
 - [x] All 5 `test-scenarios/*.yaml` still diagnose correctly against kind (re-run 2026-09-12: 01 crashloop/DATABASE_URL 98%, 02 image tag 98%, 03 OOMKilled 95%, 04 selector mismatch 95%, 05 readiness probe on 8080 95%)
+
+---
+
+## Phase 1 follow-ups (found during the deploy)
+
+- [ ] **Local-cluster status flaps between machines.** `syncLocalClusters()` marks
+      any of the owner's `mode='local'` rows offline when they are absent from
+      *this* machine's kubeconfig -- so the EC2 box marked the three kind
+      contexts offline, and the laptop will mark `aws-k3s` offline on its next
+      restart. Harmless today (nothing reads `status` yet) but it must be fixed
+      before Phase 5 shows status in the UI. Fix: tag local rows with the host
+      that owns them (`LOCAL_CLUSTER_HOST`/hostname column) and reconcile only
+      that host's rows.
+- [ ] Move `migrations/` into the repo -- it currently lives in `D:\Devops\`,
+      outside version control, so schema history exists only on the laptop.
 
 ---
 

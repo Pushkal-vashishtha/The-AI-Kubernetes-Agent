@@ -47,7 +47,23 @@ export default function LoginPage() {
 
   async function handleOAuth(provider: "github" | "google") {
     setError(null);
-    await insforge.auth.signInWithOAuth(provider, { redirectTo: window.location.origin });
+    setBusy(true);
+    try {
+      // Resolves with an error object rather than throwing when the provider
+      // is misconfigured (e.g. the redirect URL is not allowlisted); without
+      // surfacing it the button looks like it does nothing at all.
+      const { error: oauthError } = await insforge.auth.signInWithOAuth(provider, {
+        redirectTo: window.location.origin,
+      });
+      if (oauthError) {
+        setError(oauthError.message);
+        setBusy(false);
+      }
+      // On success the browser navigates away, so leave `busy` set.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Could not start ${provider} sign-in.`);
+      setBusy(false);
+    }
   }
 
   async function handleResend() {
