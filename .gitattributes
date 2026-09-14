@@ -1,0 +1,5 @@
+# Shell scripts must keep LF endings on every platform: a Windows checkout
+# with core.autocrlf would otherwise turn install.sh into CRLF, and bash
+# then fails on the stray \r.
+*.sh text eol=lf
+Dockerfile text eol=lf
