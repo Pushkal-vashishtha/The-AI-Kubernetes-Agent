@@ -24,6 +24,8 @@ RUN npm ci --omit=dev --workspace ai-kubernetes-agent-backend --include-workspac
 COPY packages/collector/src ./packages/collector/src
 COPY packages/protocol/src ./packages/protocol/src
 COPY backend/src ./backend/src
+# Served at /install.sh.
+COPY install ./install
 
 EXPOSE 8000
 

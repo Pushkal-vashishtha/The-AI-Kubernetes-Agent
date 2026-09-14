@@ -369,7 +369,11 @@ Replace the whole file with:
 <you>.duckdns.org {
 	encode gzip
 
-	@api path /health /clusters /investigate
+	# Exact paths AND their subpaths: `/clusters` alone would not match
+	# DELETE /clusters/<id>, which would then silently get index.html.
+	# /agent/* carries the in-cluster agents' WebSocket; Caddy proxies the
+	# upgrade with no extra config.
+	@api path /health /clusters /clusters/* /investigate /agent/* /install.sh
 	handle @api {
 		reverse_proxy 127.0.0.1:8000
 	}
@@ -535,6 +539,7 @@ LLM call.
 | Site shows a bare 404 page that isn't Caddy's | k3s was installed without `--disable traefik` — Traefik is intercepting ports 80/443; reinstall k3s with the Step 5 flags (or `sudo systemctl restart caddy` after disabling Traefik) |
 | Site loads but sign-in fails | Check the browser devtools Network tab — if InsForge rejects the request by origin, add `https://<you>.duckdns.org` to the project's allowed origins in the InsForge dashboard |
 | Site loads, login works, but Investigate fails with a network error | Backend down — `systemctl status aika-backend`; or the `@api` block missing from the Caddyfile |
+| Agent logs `backend refused the connection: HTTP 200`, or removing a cluster does nothing | The `@api` matcher is missing `/agent/*` or `/clusters/*`, so the request reached the frontend instead of the backend |
 | Diagnosis says cluster unreachable | `kubectl get nodes` on the instance; check `KUBECONFIG_PATH` in `backend/.env` and that `k3s.yaml` is mode 644 |
 | `kubectl` works for you but not for the service | k3s installed without `--write-kubeconfig-mode 644` — run `sudo chmod 644 /etc/rancher/k3s/k3s.yaml` |
 | Instance feels sluggish / random process deaths | Memory pressure — confirm swap is active (`free -h` should show 2 GB); never run `npm run build` on the server |
