@@ -235,6 +235,16 @@ Close the ownership holes while the app still behaves exactly as it does today.
       only adds rules, read by both the agent and the backend. An invalid pattern is skipped with a
       warning, never a crash
 - [x] `investigation.redactions` = `{ total, by_kind }` -- counts only, not sent to the LLM
+- [x] **Gap found after deploy, fixed:** pushing redaction rebuilt only `:edge` -- the publish
+      workflow never overwrites a version tag, and the agent was still `0.1.0` -- so the installer's
+      default image (`0.1.0`, digest `979d9d…`, no `redact.js`) shipped an agent that did not redact,
+      while the backend trusted agent evidence as already redacted. Production exposure: none
+      (0 agent clusters in the database, no `aika-system` namespace on the production cluster).
+      Fix: the backend now also redacts evidence that arrives from agents (defense in depth; a no-op
+      for clean text), and the agent is bumped to `0.2.0` with the installer defaulting to it.
+      3 tests in `backend/test/agent-evidence-redaction.test.js`.
+      **Lesson:** any change under `agent/` or `packages/` must bump `agent/package.json`, or the
+      published version tag silently stays stale
 - [x] Unit tests: 29 (`npm test`), including text that must survive (`DATABASE_URL is missing`,
       `secret "db-creds" not found`, image tags, probe URLs)
 - [x] **Verified live** with `test-scenarios/06-leaky-secrets.yaml` (secrets on the error lines the

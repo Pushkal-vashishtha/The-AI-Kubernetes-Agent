@@ -17,7 +17,8 @@ set -euo pipefail
 # Substituted by the backend when it serves this script, so the one-liner
 # needs no --server. Left as-is when the script is run from a checkout.
 DEFAULT_SERVER="__AIKA_DEFAULT_SERVER__"
-DEFAULT_IMAGE="ghcr.io/pushkal-vashishtha/aika-agent:0.1.0"
+# 0.2.0 is the first agent that redacts secrets inside the cluster.
+DEFAULT_IMAGE="ghcr.io/pushkal-vashishtha/aika-agent:0.2.0"
 
 NAMESPACE="aika-system"
 NAME="aika-agent"

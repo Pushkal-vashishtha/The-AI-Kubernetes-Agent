@@ -17,11 +17,40 @@ export { INVESTIGATION_STEPS, buildInitialProgress } from "@aika/collector";
  * an in-cluster agent later. The inspectors -- and everything downstream of
  * them -- cannot tell the difference.
  */
+/**
+ * Evidence from an agent should already be redacted -- agents redact inside
+ * the user's cluster -- but the backend must not depend on that. Agents run
+ * whatever version was installed (0.1.0 predates redaction) and could be
+ * modified. Redacting again is a no-op for clean text, so do it always.
+ */
+function redactAgentEvidence(investigation) {
+  if (!investigation || typeof investigation !== "object") return investigation;
+
+  const { pods, logs, events, deployments, network } = investigation;
+  const { value, summary } = redactor.redact({ pods, logs, events, deployments, network });
+
+  // Merge with whatever the agent reported, so the counts cover both passes.
+  const byKind = { ...(investigation.redactions?.by_kind ?? {}) };
+  for (const [kind, n] of Object.entries(summary.by_kind)) byKind[kind] = (byKind[kind] ?? 0) + n;
+  if (summary.total) {
+    logger.warn(`Backend redacted ${summary.total} secret(s) the agent had not -- is the agent out of date?`);
+  }
+
+  return {
+    ...investigation,
+    ...value,
+    redactions: {
+      total: (investigation.redactions?.total ?? 0) + summary.total,
+      by_kind: byKind,
+    },
+  };
+}
+
 export async function runInvestigation(source, onProgress = async () => {}) {
   // Remote sources (an in-cluster agent) collect on their side and hand back
   // the finished evidence; local ones are a client we drive from here.
   if (typeof source.collect === "function") {
-    return source.collect(onProgress);
+    return redactAgentEvidence(await source.collect(onProgress));
   }
   return collectEvidence(source, onProgress, { logger, redactor });
 }
