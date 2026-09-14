@@ -247,11 +247,21 @@ Close the ownership holes while the app still behaves exactly as it does today.
       Counted only once the investigation will really run (a bad cluster id or offline agent costs
       nothing). 5 unit tests with a fake clock; verified live: concurrent second request -> 429,
       next request after the first finished -> 200
-- [ ] Evidence caps: logs already capped (5 pods, 50 tail lines, 20 relevant lines) and events
-      (30 findings); still uncapped: `problematic_pods`, `unhealthy_deployments`, network `issues`
-- [ ] Tell the LLM explicitly what was truncated
+- [x] Evidence caps: `problematic_pods`, `unhealthy_deployments` and network `issues` capped at
+      `EVIDENCE_LIST_CAP` (20) in `collectEvidence`, *after* `issues_found` is counted so counts stay
+      exact; logs (5 pods / 50 tail / 20 relevant lines) and events (30 findings) were already capped.
+      `investigation.truncation` records `{ shown, total }` per cut list. 3 unit tests with a fake client
+- [x] Tell the LLM explicitly what was truncated: the prompt gains a NOTE line ("unhealthy pods:
+      showing 20 of 137 ...") only when something was cut
 - [ ] Namespace-scoped install (collector needs per-namespace listing first)
-- [ ] Token rotation endpoint + UI
+- [x] Token rotation: `POST /clusters/:id/rotate-token` (owner-only, agent clusters only) mints a new
+      token, stores only its hash, sets status `pending`, and closes the live socket with **4001** --
+      the code every agent version (including the published 0.1.0) already treats as fatal, so the
+      old agent exits instead of redialing with a dead token. UI: "Rotate" on agent cluster cards
+      opens a confirm-then-install-command dialog (install panel shared with Add cluster).
+      **Verified live (12/12):** agent A exits with `4001: token rotated`, cluster -> pending, old
+      token -> 401, agent B with the new token connects, investigation through it works, unknown
+      cluster -> 404
 - [ ] Agent upgrade notice when a newer version exists
 - [ ] Limits are per backend process (in-memory, like the agent hub) -- a second backend instance
       would need a shared store

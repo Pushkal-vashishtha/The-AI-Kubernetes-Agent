@@ -27,3 +27,12 @@ export function installCommand(token: string): string {
 export function apiIsLocalOnly(): boolean {
   return /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(String(api.defaults.baseURL ?? ""));
 }
+
+export async function rotateClusterToken(token: string, id: string): Promise<CreateClusterResponse> {
+  const { data } = await api.post<CreateClusterResponse>(
+    `/clusters/${encodeURIComponent(id)}/rotate-token`,
+    {},
+    auth(token),
+  );
+  return data;
+}

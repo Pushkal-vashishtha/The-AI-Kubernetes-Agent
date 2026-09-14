@@ -17,6 +17,18 @@ export { createKubectlClient, runKubectl, runKubectlJson } from "./client.kubect
 export { inspectPods, collectLogs, analyzeEvents, inspectDeployments, inspectNetwork };
 export { createRedactor, parseRedactPatterns } from "./redact.js";
 
+// A large broken cluster can produce hundreds of findings. The model needs
+// the pattern, not every instance -- and an unbounded prompt is slow, costly
+// and can exceed the context window. Counts stay exact; lists are cut.
+export const EVIDENCE_LIST_CAP = 20;
+
+function capList(section, key, truncation) {
+  const list = section?.[key];
+  if (!Array.isArray(list) || list.length <= EVIDENCE_LIST_CAP) return section;
+  truncation[key] = { shown: EVIDENCE_LIST_CAP, total: list.length };
+  return { ...section, [key]: list.slice(0, EVIDENCE_LIST_CAP) };
+}
+
 // Redaction is always on. Callers can pass a redactor with extra patterns,
 // but there is no way to collect evidence without the built-in rules.
 const defaultRedactor = createRedactor();
@@ -83,14 +95,20 @@ export async function collectEvidence(
     (deployments.unhealthy_deployments?.length ?? 0) +
     (network.issues?.length ?? 0);
 
+  // Cap after counting, so issues_found reflects the whole cluster.
+  const truncation = {};
+  const cappedPods = capList(pods, "problematic_pods", truncation);
+  const cappedDeployments = capList(deployments, "unhealthy_deployments", truncation);
+  const cappedNetwork = capList(network, "issues", truncation);
+
   // Strip credentials from every string before the evidence goes anywhere --
   // for the agent, before it leaves the user's cluster.
   const { value: sections, summary: redactions } = redactor.redact({
-    pods,
+    pods: cappedPods,
     logs,
     events,
-    deployments,
-    network,
+    deployments: cappedDeployments,
+    network: cappedNetwork,
   });
 
   const investigation = {
@@ -102,6 +120,8 @@ export async function collectEvidence(
     ...sections,
     // Counts only, never the secrets. Not part of the LLM prompt.
     redactions,
+    // Which lists were cut, as { shown, total }. Empty when nothing was.
+    truncation,
   };
 
   logger?.info(

@@ -289,3 +289,28 @@ export async function markAllAgentClustersOffline() {
 
   if (error) logger.warn(`Could not reset agent cluster status: ${error.message}`);
 }
+
+/**
+ * Replace an agent cluster's token with a new one (hash only). Scoped to the
+ * owner. The cluster goes back to "pending": the old token no longer works,
+ * so it is not connected until the agent is reinstalled with the new one.
+ * Returns the updated row, or null if the user owns no such agent cluster.
+ */
+export async function rotateAgentClusterToken(userId, clusterId, tokenHash) {
+  if (!insforgeAdmin || !clusterId) return null;
+
+  const { data, error } = await insforgeAdmin.database
+    .from("clusters")
+    .update({ agent_token_hash: tokenHash, status: "pending" })
+    .eq("id", clusterId)
+    .eq("user_id", userId)
+    .eq("mode", "agent")
+    .select(PUBLIC_COLUMNS);
+
+  if (error) {
+    logger.warn(`Could not rotate token for cluster ${clusterId}: ${error.message}`);
+    return null;
+  }
+
+  return data?.[0] ?? null;
+}

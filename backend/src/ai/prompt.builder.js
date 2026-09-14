@@ -41,8 +41,28 @@ using exactly these keys:
   "confidence_reasoning": "why this confidence level, citing specific evidence"
 }`;
 
+// Plain-language names for the capped evidence lists.
+const TRUNCATION_LABELS = {
+  problematic_pods: "unhealthy pods",
+  unhealthy_deployments: "unhealthy deployments",
+  issues: "networking issues",
+};
+
+/**
+ * One sentence telling the model a list is partial, so it does not assume
+ * it saw every failing object. Empty when nothing was cut.
+ */
+function truncationNote(truncation) {
+  const parts = Object.entries(truncation ?? {}).map(
+    ([key, { shown, total }]) => `${TRUNCATION_LABELS[key] ?? key}: showing ${shown} of ${total}`,
+  );
+  if (parts.length === 0) return "";
+  return `\n\nNOTE: some evidence lists were shortened to keep this prompt a manageable size (${parts.join("; ")}). ` +
+    "Counts such as total_pods are complete. Look for the pattern across the shown items and say that more exist.\n";
+}
+
 export function buildTroubleshootingPrompt(investigation) {
-  const userPrompt = `Kubernetes investigation evidence collected at ${investigation.collected_at}:
+  const userPrompt = `Kubernetes investigation evidence collected at ${investigation.collected_at}:${truncationNote(investigation.truncation)}
 
 ## Pod Status
 ${JSON.stringify(investigation.pods, null, 2)}

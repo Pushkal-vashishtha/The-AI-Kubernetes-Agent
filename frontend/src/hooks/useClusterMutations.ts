@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
-import { createCluster, deleteCluster } from "../services/cluster.service";
+import { createCluster, deleteCluster, rotateClusterToken } from "../services/cluster.service";
 
 function useToken() {
   const { getToken } = useAuth();
@@ -27,6 +27,16 @@ export function useDeleteCluster() {
 
   return useMutation({
     mutationFn: async (id: string) => deleteCluster(await token(), id),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["clusters"] }),
+  });
+}
+
+export function useRotateClusterToken() {
+  const token = useToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => rotateClusterToken(await token(), id),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ["clusters"] }),
   });
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ClusterInfo } from "../types";
 import { useAuth } from "../context/AuthContext";
 import { useInvestigation } from "../hooks/useInvestigation";
 import { useHistory } from "../hooks/useHistory";
@@ -13,6 +14,7 @@ import InvestigateButton from "./InvestigateButton";
 import SystemStatus from "./SystemStatus";
 import ClusterSelector from "./ClusterSelector";
 import AddClusterDialog from "./AddClusterDialog";
+import RotateTokenDialog from "./RotateTokenDialog";
 import InvestigationProgress from "./InvestigationProgress";
 import DiagnosisCard from "./DiagnosisCard";
 import HistoryTable from "./HistoryTable";
@@ -28,6 +30,7 @@ export default function Dashboard() {
   const removeCluster = useDeleteCluster();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [rotateTarget, setRotateTarget] = useState<ClusterInfo | null>(null);
 
   const clusterList = clusters.data?.clusters ?? [];
   const usable = clusterList.filter((c) => c.available);
@@ -89,6 +92,7 @@ export default function Dashboard() {
             onInvestigate={(clusterId) => investigate(clusterId)}
             onAdd={() => setAddOpen(true)}
             onRemove={(clusterId) => removeCluster.mutate(clusterId)}
+            onRotate={(cluster) => setRotateTarget(cluster)}
             removingId={removeCluster.isPending ? (removeCluster.variables ?? null) : null}
           />
           {removeCluster.isError && (
@@ -167,6 +171,7 @@ export default function Dashboard() {
         <HistoryTable records={history.data ?? []} loading={history.isLoading} />
       </main>
       <AddClusterDialog open={addOpen} onClose={() => setAddOpen(false)} clusters={clusterList} />
+      <RotateTokenDialog cluster={rotateTarget} onClose={() => setRotateTarget(null)} clusters={clusterList} />
     </div>
   );
 }

@@ -11,6 +11,7 @@ interface Props {
   onInvestigate: (clusterId: string) => void;
   onAdd: () => void;
   onRemove: (clusterId: string) => void;
+  onRotate: (cluster: ClusterInfo) => void;
   removingId: string | null;
 }
 
@@ -64,6 +65,7 @@ export default function ClusterSelector({
   onInvestigate,
   onAdd,
   onRemove,
+  onRotate,
   removingId,
 }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -185,15 +187,28 @@ export default function ClusterSelector({
               {/* Only agent clusters are removable here: local ones come from a
                   backend's kubeconfig and would simply be re-registered. */}
               {cluster.mode === "agent" && !confirming && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmingId(cluster.id)}
-                  disabled={removing}
-                  aria-label={`Remove ${cluster.name}`}
-                  className="absolute right-2 top-2 rounded-md p-1 text-slate-600 opacity-0 transition-all hover:bg-slate-800 hover:text-red-300 focus:opacity-100 group-hover:opacity-100"
-                >
-                  <XIcon className="h-3.5 w-3.5" />
-                </button>
+                <span className="absolute right-2 top-2 flex items-center gap-0.5 opacity-0 transition-all focus-within:opacity-100 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => onRotate(cluster)}
+                    disabled={removing}
+                    aria-label={`Rotate token for ${cluster.name}`}
+                    title="Rotate token"
+                    className="rounded-md px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-500 hover:bg-slate-800 hover:text-amber-300"
+                  >
+                    Rotate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingId(cluster.id)}
+                    disabled={removing}
+                    aria-label={`Remove ${cluster.name}`}
+                    title="Remove cluster"
+                    className="rounded-md p-1 text-slate-600 hover:bg-slate-800 hover:text-red-300"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </span>
               )}
 
               {confirming && (
