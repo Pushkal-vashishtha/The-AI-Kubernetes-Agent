@@ -1,0 +1,83 @@
+# Publishes the in-cluster agent image to GitHub Container Registry.
+#
+# The installer defaults to ghcr.io/<owner>/aika-agent:<agent version>, so
+# every version in agent/package.json must exist here before an install can
+# pull it. Uses the workflow's own GITHUB_TOKEN -- no personal token needed.
+#
+# First publish only: GHCR creates the package as PRIVATE. Make it public once
+# (GitHub -> your profile -> Packages -> aika-agent -> Package settings ->
+# Change visibility), or clusters will fail with ImagePullBackOff.
+name: Publish agent image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agent/**"
+      - "packages/collector/**"
+      - "packages/protocol/**"
+      - "package-lock.json"
+      - ".github/workflows/agent-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: agent-image
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image name and version
+        id: meta
+        run: |
+          # Registry paths must be lowercase; the account name is not.
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          version="$(node -p "require('./agent/package.json').version")"
+          echo "image=ghcr.io/${owner}/aika-agent" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Runs after login on purpose: the package starts private, so an
+      # anonymous lookup always fails and would republish on every run.
+      # Agents are versioned: never silently replace a published version with
+      # different contents. Bump agent/package.json to ship a change.
+      - name: Refuse to overwrite a published version
+        run: |
+          if docker manifest inspect "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}" >/dev/null 2>&1; then
+            echo "::notice::${{ steps.meta.outputs.version }} is already published; only :edge will be updated"
+            echo "PUBLISH_VERSION=false" >> "$GITHUB_ENV"
+          else
+            echo "PUBLISH_VERSION=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agent/Dockerfile
+          # amd64 for most cloud nodes, arm64 for Graviton / Ampere / Apple Silicon kind.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:edge
+            ${{ env.PUBLISH_VERSION == 'true' && format('{0}:{1}', steps.meta.outputs.image, steps.meta.outputs.version) || '' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.description=Read-only in-cluster agent for the AI Kubernetes Agent
