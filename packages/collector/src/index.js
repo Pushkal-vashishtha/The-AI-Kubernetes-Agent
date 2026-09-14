@@ -11,9 +11,15 @@ import { collectLogs } from "./inspectors/logs.collector.js";
 import { analyzeEvents } from "./inspectors/events.analyzer.js";
 import { inspectDeployments } from "./inspectors/deployment.inspector.js";
 import { inspectNetwork } from "./inspectors/network.inspector.js";
+import { createRedactor } from "./redact.js";
 
 export { createKubectlClient, runKubectl, runKubectlJson } from "./client.kubectl.js";
 export { inspectPods, collectLogs, analyzeEvents, inspectDeployments, inspectNetwork };
+export { createRedactor, parseRedactPatterns } from "./redact.js";
+
+// Redaction is always on. Callers can pass a redactor with extra patterns,
+// but there is no way to collect evidence without the built-in rules.
+const defaultRedactor = createRedactor();
 
 // The API client pulls in @kubernetes/client-node, so it is imported lazily:
 // the backend's local path should not pay for a dependency it never uses.
@@ -43,7 +49,11 @@ export function buildInitialProgress() {
  * `onProgress(stepKey, status)` is awaited around each step so callers can
  * stream progress (e.g. into InsForge realtime). Defaults to a no-op.
  */
-export async function collectEvidence(client, onProgress = async () => {}, { logger } = {}) {
+export async function collectEvidence(
+  client,
+  onProgress = async () => {},
+  { logger, redactor = defaultRedactor } = {},
+) {
   logger?.info(`Investigation started${client.context ? ` (context: ${client.context})` : ""}`);
   const startedAt = Date.now();
 
@@ -73,21 +83,30 @@ export async function collectEvidence(client, onProgress = async () => {}, { log
     (deployments.unhealthy_deployments?.length ?? 0) +
     (network.issues?.length ?? 0);
 
+  // Strip credentials from every string before the evidence goes anywhere --
+  // for the agent, before it leaves the user's cluster.
+  const { value: sections, summary: redactions } = redactor.redact({
+    pods,
+    logs,
+    events,
+    deployments,
+    network,
+  });
+
   const investigation = {
     collected_at: new Date().toISOString(),
     duration_ms: Date.now() - startedAt,
     cluster_context: client.context ?? null,
     cluster_reachable: pods.error === null,
     issues_found: issuesFound,
-    pods,
-    logs,
-    events,
-    deployments,
-    network,
+    ...sections,
+    // Counts only, never the secrets. Not part of the LLM prompt.
+    redactions,
   };
 
   logger?.info(
-    `Investigation finished in ${investigation.duration_ms}ms — ${issuesFound} potential issue(s) found`,
+    `Investigation finished in ${investigation.duration_ms}ms — ${issuesFound} potential issue(s) found` +
+      (redactions.total ? `, ${redactions.total} secret(s) redacted` : ""),
   );
 
   return investigation;

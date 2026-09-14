@@ -14,9 +14,13 @@ import {
 } from "../services/cluster.service.js";
 import { isAvailableHere, sourceForCluster } from "../services/evidence.source.js";
 import { requireAuth } from "./auth.middleware.js";
+import { createInvestigationLimiter } from "./investigation.limiter.js";
+import config from "../core/config.js";
 import logger from "../core/logger.js";
 
 const router = Router();
+
+const limiter = createInvestigationLimiter({ maxPerWindow: config.investigateMaxPerHour });
 
 /**
  * Shape a cluster row for the frontend. `context`/`cluster`/`current` are the
@@ -117,6 +121,18 @@ router.post("/investigate", requireAuth, async (req, res) => {
   if (sourceError) {
     return res.status(sourceError.code).json({ status: "error", message: sourceError.message });
   }
+
+  // Checked only once the investigation will really run, so a mistyped
+  // cluster id or an offline agent never costs the user any quota.
+  const slot = limiter.acquire(req.user.id);
+  if (!slot.ok) {
+    res.set("Retry-After", String(slot.retryAfterSeconds));
+    return res.status(slot.status).json({ status: "error", message: slot.message });
+  }
+  // However the request ends (success, error, or the client going away),
+  // free the concurrency slot.
+  res.on("finish", slot.release);
+  res.on("close", slot.release);
 
   const progress = buildInitialProgress();
 

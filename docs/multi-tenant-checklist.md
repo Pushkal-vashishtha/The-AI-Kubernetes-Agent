@@ -225,14 +225,39 @@ Close the ownership holes while the app still behaves exactly as it does today.
 
 ## Phase 6 — Hardening
 
-- [ ] Log redaction **at the agent**: JWTs, `AWS_*`, connection strings, bearer tokens
-- [ ] User-extendable redaction patterns, documented
-- [ ] Evidence caps: top N problematic pods, ~100 log lines each, 1h event window
+- [x] **Evidence redaction in the collector** (`packages/collector/src/redact.js`), applied to every
+      string in all five evidence sections at the end of `collectEvidence()` -- so the agent strips
+      secrets *inside the user's cluster*, before anything is sent. Rules: private keys, JWTs,
+      bearer tokens, `scheme://user:PASSWORD@host`, AWS access keys, GitHub / Slack / Google /
+      `sk-` API keys, `aika_` agent tokens, InsForge `ik_` keys, and `*PASSWORD*/*SECRET*/*TOKEN*/*KEY*`
+      assignments. Keeps the key name and host; drops only the value
+- [x] Redaction cannot be switched off; `AIKA_REDACT_PATTERNS` (JSON array or one regex per line)
+      only adds rules, read by both the agent and the backend. An invalid pattern is skipped with a
+      warning, never a crash
+- [x] `investigation.redactions` = `{ total, by_kind }` -- counts only, not sent to the LLM
+- [x] Unit tests: 29 (`npm test`), including text that must survive (`DATABASE_URL is missing`,
+      `secret "db-creds" not found`, image tags, probe URLs)
+- [x] **Verified live** with `test-scenarios/06-leaky-secrets.yaml` (secrets on the error lines the
+      log filter keeps): `redactions.total = 3` (url_password, jwt, api_key); none of the planted
+      values in the API response, the stored `investigations` row, or the LLM output; diagnosis
+      still correct (98%). A first attempt with secrets on non-error lines redacted nothing because
+      the log filter had already dropped them -- the scenario now documents why
+- [x] **Per-user investigation limit** (`backend/src/api/investigation.limiter.js`): one running at
+      a time, `INVESTIGATE_MAX_PER_HOUR` (default 20) in a rolling hour; 429 + `Retry-After`.
+      Counted only once the investigation will really run (a bad cluster id or offline agent costs
+      nothing). 5 unit tests with a fake clock; verified live: concurrent second request -> 429,
+      next request after the first finished -> 200
+- [ ] Evidence caps: logs already capped (5 pods, 50 tail lines, 20 relevant lines) and events
+      (30 findings); still uncapped: `problematic_pods`, `unhealthy_deployments`, network `issues`
 - [ ] Tell the LLM explicitly what was truncated
-- [ ] Namespace-scoped install path verified (Role, not ClusterRole)
+- [ ] Namespace-scoped install (collector needs per-namespace listing first)
 - [ ] Token rotation endpoint + UI
-- [ ] Per-tenant rate limit on `/investigate` (protects the OpenRouter key)
 - [ ] Agent upgrade notice when a newer version exists
+- [ ] Limits are per backend process (in-memory, like the agent hub) -- a second backend instance
+      would need a shared store
+
+### Phase 5 follow-up
+- [x] "Other backend" card label truncated the host name -- now `On <host>` first
 
 ---
 

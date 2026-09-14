@@ -18,6 +18,11 @@ const config = {
   // mark the cluster online or offline. Defaults to the machine's hostname;
   // set it explicitly if hostnames change (containers, rebuilt instances).
   localClusterHost: process.env.LOCAL_CLUSTER_HOST || os.hostname(),
+  // Extra evidence redaction rules for locally collected clusters (agents read
+  // the same variable in their own pod). JSON array or one regex per line.
+  redactPatterns: process.env.AIKA_REDACT_PATTERNS || "",
+  // Per-user investigation limit: each one is a paid LLM call on a shared key.
+  investigateMaxPerHour: Number(process.env.INVESTIGATE_MAX_PER_HOUR) || 20,
   insforge: {
     url: process.env.INSFORGE_URL || "",
     apiKey: process.env.INSFORGE_API_KEY || "",

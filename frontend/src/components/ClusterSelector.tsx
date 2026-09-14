@@ -33,8 +33,9 @@ function describe(cluster: ClusterInfo): { tone: Tone; label: string; hint: stri
       ? { tone: "ready", label: "Ready", hint: null }
       : {
           tone: "offline",
-          label: "Other backend",
-          hint: `Kubeconfig cluster registered on ${cluster.host ?? "another backend"}`,
+          // Host first, so it survives truncation on narrow cards.
+          label: `On ${cluster.host ?? "another backend"}`,
+          hint: "kubeconfig cluster only that backend can investigate",
         };
   }
   if (cluster.available) return { tone: "ready", label: "Connected", hint: null };

@@ -7,7 +7,7 @@
 // role the user applied themselves.
 
 import WebSocket from "ws";
-import { collectEvidence, createApiClient } from "@aika/collector";
+import { collectEvidence, createApiClient, createRedactor, parseRedactPatterns } from "@aika/collector";
 import {
   AGENT_CONNECT_PATH,
   CLOSE,
@@ -28,6 +28,9 @@ const config = {
   // Only for running the agent outside a cluster during development; inside
   // a pod the mounted ServiceAccount is used.
   kubeconfig: process.env.AIKA_KUBECONFIG || undefined,
+  // Extra redaction rules on top of the built-ins (JSON array or one regex per
+  // line). They run here, in the cluster, before evidence is sent anywhere.
+  redactPatterns: parseRedactPatterns(process.env.AIKA_REDACT_PATTERNS),
 };
 
 // Close codes after which redialing cannot help -- the user has to act.
@@ -80,9 +83,13 @@ async function runJob(client, jobId) {
   log.info(`job ${jobId}: collecting evidence`);
 
   try {
-    const investigation = await collectEvidence(client, async (step, status) => {
-      send(MESSAGE.PROGRESS, { job_id: jobId, step, status });
-    });
+    const investigation = await collectEvidence(
+      client,
+      async (step, status) => {
+        send(MESSAGE.PROGRESS, { job_id: jobId, step, status });
+      },
+      { redactor },
+    );
     send(MESSAGE.RESULT, { job_id: jobId, investigation });
     log.info(`job ${jobId}: done, ${investigation.issues_found} potential issue(s)`);
   } catch (error) {
@@ -185,9 +192,11 @@ function shutdown(signal) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
+const redactor = createRedactor({ extraPatterns: config.redactPatterns, logger: log });
 const client = await createApiClient({ kubeconfig: config.kubeconfig, logger: log });
 clusterInfo = await detectCluster(config.kubeconfig);
 log.info(
   `agent ${AGENT_VERSION} starting; cluster looks like ${clusterInfo.distro} ${clusterInfo.kubernetes_version ?? ""}`.trim(),
 );
+if (redactor.customRuleCount) log.info(`${redactor.customRuleCount} custom redaction pattern(s) active`);
 connect(client);

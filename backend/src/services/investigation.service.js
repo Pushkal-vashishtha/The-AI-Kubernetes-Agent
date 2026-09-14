@@ -1,6 +1,10 @@
-import { collectEvidence } from "@aika/collector";
+import { collectEvidence, createRedactor, parseRedactPatterns } from "@aika/collector";
 import { analyzeClusterFindings } from "../ai/reasoner.js";
+import config from "../core/config.js";
 import logger from "../core/logger.js";
+
+// Built-in rules plus any AIKA_REDACT_PATTERNS, compiled once at startup.
+const redactor = createRedactor({ extraPatterns: parseRedactPatterns(config.redactPatterns), logger });
 
 // Re-exported so existing importers (routes, and anything that renders the
 // step list) keep working unchanged.
@@ -19,7 +23,7 @@ export async function runInvestigation(source, onProgress = async () => {}) {
   if (typeof source.collect === "function") {
     return source.collect(onProgress);
   }
-  return collectEvidence(source, onProgress, { logger });
+  return collectEvidence(source, onProgress, { logger, redactor });
 }
 
 /**

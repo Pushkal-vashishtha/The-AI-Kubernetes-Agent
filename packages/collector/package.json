@@ -9,5 +9,8 @@
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/redact.test.js"
   }
 }
