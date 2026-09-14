@@ -30,11 +30,33 @@ export interface ProgressStep {
 
 export type InvestigationStatus = "running" | "completed" | "failed";
 
-// One kubeconfig context, as reported by GET /clusters
+export type ClusterMode = "local" | "agent";
+export type ClusterStatus = "pending" | "online" | "offline";
+
+// One cluster the signed-in user owns, as reported by GET /clusters.
 export interface ClusterInfo {
+  id: string;
+  name: string;
+  mode: ClusterMode;
+  status: ClusterStatus;
+  distro: string | null;
+  agent_version: string | null;
+  last_seen_at: string | null;
+  // Backend that registered a local (kubeconfig) cluster; null for agents.
+  host: string | null;
+  // Whether this backend can investigate the cluster right now.
+  available: boolean;
+  // Legacy fields kept by the API for older clients.
   context: string;
   cluster: string;
   current: boolean;
+}
+
+export interface CreateClusterResponse {
+  status: string;
+  cluster: ClusterInfo;
+  // Shown exactly once -- the backend stores only its hash.
+  agent_token: string;
 }
 
 export interface ClustersResponse {

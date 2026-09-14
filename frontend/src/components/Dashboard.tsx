@@ -3,6 +3,8 @@ import { useAuth } from "../context/AuthContext";
 import { useInvestigation } from "../hooks/useInvestigation";
 import { useHistory } from "../hooks/useHistory";
 import { useClusters } from "../hooks/useClusters";
+import { useClusterEvents } from "../hooks/useClusterEvents";
+import { useDeleteCluster } from "../hooks/useClusterMutations";
 import { useLiveProgress } from "../hooks/useLiveProgress";
 import { INITIAL_STEPS } from "../lib/steps";
 import { friendlyErrorMessage } from "../lib/errors";
@@ -10,6 +12,7 @@ import Header from "./Header";
 import InvestigateButton from "./InvestigateButton";
 import SystemStatus from "./SystemStatus";
 import ClusterSelector from "./ClusterSelector";
+import AddClusterDialog from "./AddClusterDialog";
 import InvestigationProgress from "./InvestigationProgress";
 import DiagnosisCard from "./DiagnosisCard";
 import HistoryTable from "./HistoryTable";
@@ -21,12 +24,17 @@ export default function Dashboard() {
   const history = useHistory(Boolean(user));
   const clusters = useClusters(Boolean(user));
   const liveEvent = useLiveProgress(user?.id ?? null);
-  const [selectedContext, setSelectedContext] = useState<string | null>(null);
+  useClusterEvents(user?.id ?? null);
+  const removeCluster = useDeleteCluster();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const clusterList = clusters.data?.clusters ?? [];
-  const currentContext = clusters.data?.current_context ?? null;
-  // The cluster investigations run against: user's pick, else kubeconfig default.
-  const targetContext = selectedContext ?? currentContext;
+  const usable = clusterList.filter((c) => c.available);
+  // The cluster investigations run against: the user's pick while it is still
+  // usable, else the only usable cluster, else none (the backend will ask).
+  const picked = clusterList.find((c) => c.id === selectedId && c.available);
+  const targetId = picked?.id ?? (usable.length === 1 ? usable[0].id : null);
 
   const diagnosis = investigation.data?.diagnosis ?? null;
   const result = investigation.data?.investigation;
@@ -35,9 +43,9 @@ export default function Dashboard() {
   const showProgress = investigation.isPending || investigation.data || investigation.isError;
   const steps = liveEvent?.progress?.length ? liveEvent.progress : INITIAL_STEPS;
 
-  function investigate(context: string | null) {
-    if (context) setSelectedContext(context);
-    investigation.mutate(context ?? undefined);
+  function investigate(clusterId: string | null) {
+    if (clusterId) setSelectedId(clusterId);
+    investigation.mutate(clusterId ?? undefined);
   }
 
   return (
@@ -63,7 +71,7 @@ export default function Dashboard() {
             get a root cause with a suggested fix.
           </p>
           <InvestigateButton
-            onClick={() => investigate(targetContext)}
+            onClick={() => investigate(targetId)}
             loading={investigation.isPending}
           />
           <SystemStatus />
@@ -76,10 +84,16 @@ export default function Dashboard() {
                 ? friendlyErrorMessage(clusters.error)
                 : (clusters.data?.error ?? null)
             }
-            selected={targetContext}
+            selectedId={targetId}
             disabled={investigation.isPending}
-            onInvestigate={(context) => investigate(context)}
+            onInvestigate={(clusterId) => investigate(clusterId)}
+            onAdd={() => setAddOpen(true)}
+            onRemove={(clusterId) => removeCluster.mutate(clusterId)}
+            removingId={removeCluster.isPending ? (removeCluster.variables ?? null) : null}
           />
+          {removeCluster.isError && (
+            <p className="text-sm text-red-400">{friendlyErrorMessage(removeCluster.error)}</p>
+          )}
         </section>
 
         {showProgress && (
@@ -152,6 +166,7 @@ export default function Dashboard() {
 
         <HistoryTable records={history.data ?? []} loading={history.isLoading} />
       </main>
+      <AddClusterDialog open={addOpen} onClose={() => setAddOpen(false)} clusters={clusterList} />
     </div>
   );
 }

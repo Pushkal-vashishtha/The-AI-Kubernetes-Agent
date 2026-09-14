@@ -7,10 +7,10 @@ export function useInvestigation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (context?: string) => {
+    mutationFn: async (clusterId?: string) => {
       const token = await getToken();
       if (!token) throw new Error("Your session has expired — please sign in again.");
-      return startInvestigation(token, context);
+      return startInvestigation(token, clusterId);
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["investigations"] });
