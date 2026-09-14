@@ -11,7 +11,7 @@ import { listClusters as listKubeconfigContexts } from "../kubernetes/cluster.in
 
 // Columns safe to hand to the frontend (never agent_token_hash).
 const PUBLIC_COLUMNS =
-  "id,user_id,name,mode,context,agent_version,distro,status,last_seen_at,created_at,updated_at";
+  "id,user_id,name,mode,context,host,agent_version,distro,status,last_seen_at,created_at,updated_at";
 
 /** Every cluster owned by this user, newest first. */
 export async function listUserClusters(userId) {
@@ -54,7 +54,11 @@ export async function getUserCluster(userId, clusterId) {
   return data?.[0] ?? null;
 }
 
-/** Resolve a legacy `{ context }` request to one of this user's local clusters. */
+/**
+ * Resolve a legacy `{ context }` request to one of this user's local clusters.
+ * The same context name can be registered by more than one backend, so prefer
+ * the row this backend owns, then an unclaimed one.
+ */
 export async function findUserClusterByContext(userId, context) {
   if (!insforgeAdmin || !context) return null;
 
@@ -63,15 +67,20 @@ export async function findUserClusterByContext(userId, context) {
     .select(PUBLIC_COLUMNS)
     .eq("user_id", userId)
     .eq("mode", "local")
-    .eq("context", context)
-    .limit(1);
+    .eq("context", context);
 
   if (error) {
     logger.warn(`Could not resolve context "${context}": ${error.message}`);
     return null;
   }
 
-  return data?.[0] ?? null;
+  const rows = data ?? [];
+  return (
+    rows.find((row) => row.host === config.localClusterHost) ??
+    rows.find((row) => !row.host) ??
+    rows[0] ??
+    null
+  );
 }
 
 /**
@@ -80,10 +89,19 @@ export async function findUserClusterByContext(userId, context) {
  * behaviour working (dev loop against kind, the EC2 demo) now that the
  * cluster list comes from the database instead of the kubeconfig.
  *
+ * More than one backend can register clusters for the same owner (a laptop
+ * and the EC2 box both do), so every row is tagged with the host that owns
+ * it, and a backend only ever reconciles its own rows. Without that, each
+ * backend marks the other's clusters offline on every boot.
+ *
+ * Rows from before hosts existed (host IS NULL) are claimed by the first
+ * backend that actually has that context, and otherwise left untouched.
+ *
  * Runs once at boot, best-effort: a failure here must never stop the server.
  */
 export async function syncLocalClusters() {
   const ownerId = config.localClusterOwner;
+  const host = config.localClusterHost;
   if (!ownerId) return;
 
   if (!insforgeAdmin) {
@@ -97,59 +115,70 @@ export async function syncLocalClusters() {
     return;
   }
 
-  const { clusters: existing } = await listUserClusters(ownerId);
-  const known = new Map(
-    existing.filter((c) => c.mode === "local").map((c) => [c.context, c]),
-  );
+  const { clusters: existing, error: listError } = await listUserClusters(ownerId);
+  if (listError) {
+    logger.warn(`Local cluster sync skipped: ${listError}`);
+    return;
+  }
+
+  const local = existing.filter((c) => c.mode === "local");
+  const mine = new Map(local.filter((c) => c.host === host).map((c) => [c.context, c]));
+  const unclaimed = new Map(local.filter((c) => !c.host).map((c) => [c.context, c]));
+  const takenNames = new Set(existing.map((c) => c.name));
+  const now = new Date().toISOString();
 
   let added = 0;
-  for (const ctx of contexts) {
-    const row = known.get(ctx.context);
+  let claimed = 0;
 
-    if (!row) {
-      const { error: insertError } = await insforgeAdmin.database
+  for (const { context } of contexts) {
+    const row = mine.get(context) ?? unclaimed.get(context);
+
+    if (row) {
+      if (!row.host) claimed += 1;
+      await insforgeAdmin.database
         .from("clusters")
-        .insert([
-          {
-            user_id: ownerId,
-            name: ctx.context,
-            mode: "local",
-            context: ctx.context,
-            status: "online",
-            distro: "kubeconfig",
-            last_seen_at: new Date().toISOString(),
-          },
-        ]);
-
-      if (insertError) {
-        logger.warn(`Could not register local cluster "${ctx.context}": ${insertError.message}`);
-        continue;
-      }
-      added += 1;
+        .update({ status: "online", last_seen_at: now, host })
+        .eq("id", row.id);
       continue;
     }
 
-    // Already registered -- just refresh liveness.
-    await insforgeAdmin.database
-      .from("clusters")
-      .update({ status: "online", last_seen_at: new Date().toISOString() })
-      .eq("id", row.id);
+    // Names are unique per user; another backend may already use this one.
+    const name = takenNames.has(context) ? `${context} (${host})` : context;
+
+    const { error: insertError } = await insforgeAdmin.database.from("clusters").insert([
+      {
+        user_id: ownerId,
+        name,
+        mode: "local",
+        context,
+        host,
+        status: "online",
+        distro: "kubeconfig",
+        last_seen_at: now,
+      },
+    ]);
+
+    if (insertError) {
+      logger.warn(`Could not register local cluster "${context}": ${insertError.message}`);
+      continue;
+    }
+    takenNames.add(name);
+    added += 1;
   }
 
-  // Contexts that have disappeared from the kubeconfig are marked offline
-  // rather than deleted, so their investigation history keeps its link.
+  // Only this host's own contexts that have disappeared go offline. They are
+  // not deleted, so their investigation history keeps its link.
   const live = new Set(contexts.map((c) => c.context));
-  for (const [context, row] of known) {
+  let wentOffline = 0;
+  for (const [context, row] of mine) {
     if (!live.has(context) && row.status !== "offline") {
-      await insforgeAdmin.database
-        .from("clusters")
-        .update({ status: "offline" })
-        .eq("id", row.id);
+      await insforgeAdmin.database.from("clusters").update({ status: "offline" }).eq("id", row.id);
+      wentOffline += 1;
     }
   }
 
   logger.info(
-    `Local cluster sync: ${contexts.length} kubeconfig context(s), ${added} newly registered`,
+    `Local cluster sync on ${host}: ${contexts.length} context(s), ${added} registered, ${claimed} claimed, ${wentOffline} offline`,
   );
 }
 

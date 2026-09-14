@@ -12,7 +12,7 @@ import {
   getUserCluster,
   findUserClusterByContext,
 } from "../services/cluster.service.js";
-import { sourceForCluster } from "../services/evidence.source.js";
+import { isAvailableHere, sourceForCluster } from "../services/evidence.source.js";
 import { requireAuth } from "./auth.middleware.js";
 import logger from "../core/logger.js";
 
@@ -33,6 +33,9 @@ function toClusterResponse(row) {
     distro: row.distro,
     agent_version: row.agent_version,
     last_seen_at: row.last_seen_at,
+    host: row.host ?? null,
+    // Can this backend investigate it right now? The UI should disable the rest.
+    available: isAvailableHere(row),
     // legacy fields
     context: row.context ?? row.name,
     cluster: row.name,
@@ -47,9 +50,12 @@ router.get("/clusters", requireAuth, async (req, res) => {
   res.json({
     status: error ? "error" : "success",
     clusters: shaped,
-    // Kept for the current UI's default-selection logic: the single local
-    // cluster if there is exactly one, otherwise no default.
-    current_context: shaped.length === 1 ? shaped[0].context : null,
+    // Kept for the current UI's default-selection logic: the single cluster
+    // this backend can actually investigate, if there is exactly one.
+    current_context: (() => {
+      const usable = shaped.filter((c) => c.available);
+      return usable.length === 1 ? usable[0].context : null;
+    })(),
     error,
   });
 });
@@ -84,9 +90,10 @@ async function resolveTargetCluster(userId, body) {
     return { cluster };
   }
 
-  // Nothing specified: only unambiguous when the user owns exactly one.
+  // Nothing specified: only unambiguous when exactly one is usable here.
   const { clusters } = await listUserClusters(userId);
-  if (clusters.length === 1) return { cluster: clusters[0] };
+  const usable = clusters.filter(isAvailableHere);
+  if (usable.length === 1) return { cluster: usable[0] };
 
   return {
     error: {

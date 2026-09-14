@@ -44,6 +44,17 @@ function describeLastSeen(lastSeenAt) {
  */
 export function sourceForCluster(cluster) {
   if (cluster.mode === "local") {
+    // The kubeconfig for a local cluster exists only on the backend that
+    // registered it. Anywhere else, kubectl would just fail with a confusing
+    // "cluster unreachable" diagnosis.
+    if (cluster.host && cluster.host !== config.localClusterHost) {
+      return {
+        error: {
+          code: 503,
+          message: `"${cluster.name}" is a kubeconfig cluster registered by the backend on ${cluster.host}; only that backend can investigate it.`,
+        },
+      };
+    }
     return { source: localKubectlSource(cluster.context ?? undefined) };
   }
 
@@ -59,4 +70,16 @@ export function sourceForCluster(cluster) {
   }
 
   return { source: remoteAgentSource(cluster) };
+}
+
+/**
+ * Whether THIS backend can investigate the cluster right now: a local cluster
+ * it registered (or an unclaimed legacy one), or an agent cluster whose agent
+ * is connected here.
+ */
+export function isAvailableHere(cluster) {
+  if (cluster.mode === "local") {
+    return !cluster.host || cluster.host === config.localClusterHost;
+  }
+  return isAgentConnected(cluster.id);
 }

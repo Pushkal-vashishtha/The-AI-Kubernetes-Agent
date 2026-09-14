@@ -1,4 +1,5 @@
 import "dotenv/config";
+import os from "node:os";
 
 const config = {
   port: Number(process.env.PORT) || 8000,
@@ -12,6 +13,11 @@ const config = {
   // Unset in a real multi-tenant deployment -- every other user enrols their
   // own cluster with an agent instead.
   localClusterOwner: process.env.LOCAL_CLUSTER_OWNER || "",
+  // Which backend registered a local cluster. Only that backend holds the
+  // kubeconfig, so only it can investigate the cluster -- and only it may
+  // mark the cluster online or offline. Defaults to the machine's hostname;
+  // set it explicitly if hostnames change (containers, rebuilt instances).
+  localClusterHost: process.env.LOCAL_CLUSTER_HOST || os.hostname(),
   insforge: {
     url: process.env.INSFORGE_URL || "",
     apiKey: process.env.INSFORGE_API_KEY || "",
