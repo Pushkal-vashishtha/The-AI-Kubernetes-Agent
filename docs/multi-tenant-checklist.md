@@ -200,14 +200,26 @@ Close the ownership holes while the app still behaves exactly as it does today.
 
 ## Phase 5 — Frontend
 
-- [ ] "Add Cluster" modal: name → copyable install command
-- [ ] Live "waiting for agent…" state via the `clusters:user:<id>` channel
-- [ ] `ClusterSelector.tsx`: status dots (online / offline / pending), offline cards disabled
-- [ ] Empty state → "Add your first cluster" (replaces "No clusters found in the kubeconfig on the backend machine")
-- [ ] `useClusters.ts` and `useInvestigation.ts` switch to `cluster_id`
-- [ ] Cluster detail: last seen, agent version, distro, rotate token, remove cluster
-- [ ] Friendly error mapping for agent-offline / job-timeout in `lib/errors.ts`
-- [ ] `npm run build` clean
+- [x] "Add Cluster" dialog: name -> one-time install command with copy button; token held only in
+      component state (never storage), dropped on close; localhost-API hint for kind
+- [x] Live "waiting for agent…" -> "Connected" via the `clusters:user:<id>` channel
+      (probed with the frontend SDK + a real agent on kind: pending/online/offline delivered
+      ~2s after each change; `realtime.messages.ws_audience_count` = 1 for each)
+- [x] `ClusterSelector.tsx`: status dot + label (Ready / Connected / Waiting for agent /
+      Offline with last-seen / other backend), `agent` vs `kubeconfig` badge, unusable cards
+      disabled with the reason
+- [x] Empty state -> "Add your first cluster"
+- [x] `useClusters` / `useInvestigation` switched to `cluster_id`; default target = the only
+      available cluster
+- [x] Remove cluster (agent clusters) with inline confirmation -- no browser `confirm()`
+- [ ] Cluster detail view (agent version, distro, rotate token) -- rotation is a Phase 6 backend item
+- [x] Friendly errors: 409 duplicate name, 503 offline / other backend surface via the API `message`
+- [x] `npm run build` clean (tsc + vite)
+- [x] Deletions published too: migration 20260914130704 adds an AFTER DELETE trigger
+      (`status: "deleted"`); probed arriving ~0.8s after the DELETE
+- [ ] **Browser walkthrough** -- not done: the Claude-in-Chrome extension was not connected.
+      Dev servers left running at http://localhost:3000 for a manual check
+- [ ] Deploy (push) -- held until the UI has been looked at
 
 ---
 
