@@ -152,3 +152,111 @@ export async function syncLocalClusters() {
     `Local cluster sync: ${contexts.length} kubeconfig context(s), ${added} newly registered`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Agent-backed clusters
+// ---------------------------------------------------------------------------
+
+/**
+ * Register an agent-backed cluster. The caller mints the token and passes
+ * only its hash -- this module never sees a usable credential.
+ * Returns { cluster } or { error, conflict }.
+ */
+export async function createAgentCluster(userId, name, tokenHash) {
+  if (!insforgeAdmin) return { error: "Cluster registry unavailable" };
+
+  const { data, error } = await insforgeAdmin.database
+    .from("clusters")
+    .insert([
+      {
+        user_id: userId,
+        name,
+        mode: "agent",
+        status: "pending",
+        agent_token_hash: tokenHash,
+      },
+    ])
+    .select(PUBLIC_COLUMNS);
+
+  if (error) {
+    // clusters_user_name_idx: names are unique per user.
+    const conflict = /duplicate|unique/i.test(error.message);
+    if (!conflict) logger.warn(`Could not create cluster "${name}": ${error.message}`);
+    return { error: error.message, conflict };
+  }
+
+  return { cluster: data?.[0] ?? null };
+}
+
+/** Delete a cluster this user owns. Returns true only if a row went away. */
+export async function deleteUserCluster(userId, clusterId) {
+  if (!insforgeAdmin) return false;
+
+  const { data, error } = await insforgeAdmin.database
+    .from("clusters")
+    .delete()
+    .eq("id", clusterId)
+    .eq("user_id", userId)
+    .select("id");
+
+  if (error) {
+    logger.warn(`Could not delete cluster ${clusterId}: ${error.message}`);
+    return false;
+  }
+
+  return (data?.length ?? 0) > 0;
+}
+
+/**
+ * Resolve an agent's token hash to its cluster. This is the one lookup that
+ * is not scoped by user: the token itself is the proof of ownership.
+ */
+export async function findClusterByTokenHash(tokenHash) {
+  if (!insforgeAdmin || !tokenHash) return null;
+
+  const { data, error } = await insforgeAdmin.database
+    .from("clusters")
+    .select(PUBLIC_COLUMNS)
+    .eq("agent_token_hash", tokenHash)
+    .eq("mode", "agent")
+    .limit(1);
+
+  if (error) {
+    logger.warn(`Agent token lookup failed: ${error.message}`);
+    return null;
+  }
+
+  return data?.[0] ?? null;
+}
+
+/** Record agent liveness / metadata. Best-effort: never throws. */
+export async function updateAgentCluster(clusterId, fields) {
+  if (!insforgeAdmin || !clusterId) return;
+
+  const { error } = await insforgeAdmin.database
+    .from("clusters")
+    .update(fields)
+    .eq("id", clusterId)
+    .eq("mode", "agent");
+
+  if (error) {
+    logger.warn(`Could not update agent cluster ${clusterId}: ${error.message}`);
+  }
+}
+
+/**
+ * Agent connections live in this process's memory, so after a restart no
+ * agent is connected until it redials. Say so in the database instead of
+ * leaving stale "online" rows behind.
+ */
+export async function markAllAgentClustersOffline() {
+  if (!insforgeAdmin) return;
+
+  const { error } = await insforgeAdmin.database
+    .from("clusters")
+    .update({ status: "offline" })
+    .eq("mode", "agent")
+    .eq("status", "online");
+
+  if (error) logger.warn(`Could not reset agent cluster status: ${error.message}`);
+}

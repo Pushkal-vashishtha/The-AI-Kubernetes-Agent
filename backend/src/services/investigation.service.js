@@ -14,6 +14,11 @@ export { INVESTIGATION_STEPS, buildInitialProgress } from "@aika/collector";
  * them -- cannot tell the difference.
  */
 export async function runInvestigation(source, onProgress = async () => {}) {
+  // Remote sources (an in-cluster agent) collect on their side and hand back
+  // the finished evidence; local ones are a client we drive from here.
+  if (typeof source.collect === "function") {
+    return source.collect(onProgress);
+  }
   return collectEvidence(source, onProgress, { logger });
 }
 

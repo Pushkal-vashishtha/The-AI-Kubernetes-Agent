@@ -1,5 +1,5 @@
 # Build context is the REPO ROOT, not backend/ -- the backend depends on the
-# @aika/collector workspace, which lives outside this directory.
+# @aika/collector and @aika/protocol workspaces, which live outside it.
 #   docker build -f backend/Dockerfile .
 FROM node:20-alpine
 
@@ -16,9 +16,13 @@ RUN wget -qO /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
 COPY packages/collector/package.json ./packages/collector/
-RUN npm ci --omit=dev
+COPY packages/protocol/package.json ./packages/protocol/
+# Install only the backend's workspace tree -- the root lockfile also lists
+# the agent, which this image neither contains nor needs.
+RUN npm ci --omit=dev --workspace ai-kubernetes-agent-backend --include-workspace-root=false
 
 COPY packages/collector/src ./packages/collector/src
+COPY packages/protocol/src ./packages/protocol/src
 COPY backend/src ./backend/src
 
 EXPOSE 8000

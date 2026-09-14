@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "packages/*",
-    "backend"
+    "backend",
+    "agent"
   ],
   "scripts": {
     "dev": "npm run dev --workspace ai-kubernetes-agent-backend",

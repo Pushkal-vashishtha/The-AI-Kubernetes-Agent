@@ -85,25 +85,49 @@ Close the ownership holes while the app still behaves exactly as it does today.
 ## Phase 3 — Agent + control plane
 
 ### Agent (`agent/`)
-- [ ] Scaffold Node 20 project, `node:20-alpine` image
-- [ ] Read `AIKA_TOKEN` / `AIKA_SERVER` from env (mounted Secret)
-- [ ] Outbound WSS connection to backend + 30s heartbeat
-- [ ] Reconnect with exponential backoff + jitter
-- [ ] Handle `{type:'investigate', job_id}` → run collector → POST evidence
-- [ ] Stream per-step progress so the existing realtime UI keeps animating
-- [ ] Send `agent_version` on connect
-- [ ] Graceful shutdown on SIGTERM
-- [ ] Resource limits in the manifest (128Mi / 100m is plenty)
+- [x] Scaffold Node 20 project, `node:20-alpine` image -- ~60 MB, runs as UID 1000,
+      no Express / InsForge SDK / kubectl in the image (verified by listing it)
+- [x] Read `AIKA_TOKEN` / `AIKA_SERVER` from env (`AIKA_KUBECONFIG` for dev only)
+- [x] Outbound WebSocket to backend; server-side ping every 30s, dead peers terminated
+- [x] Reconnect with exponential backoff + full jitter (observed 0.7s -> 15.1s while backend was down)
+- [x] Handle `investigate` -> run collector -> send evidence back
+      (deviation: evidence returns over the same socket, not a separate POST --
+      the socket is already authenticated, so a second auth path would only add surface)
+- [x] Stream per-step progress -- all 6 steps landed in the history row
+- [x] Send `agent_version`, `distro`, `kubernetes_version` in `hello`
+- [x] Graceful shutdown on SIGTERM/SIGINT (5s cap) -- **SIGTERM path itself untested:
+      Windows `Stop-Process` is a hard kill. Verify in-pod in Phase 4.**
+- [ ] Resource limits in the manifest (moves to Phase 4 -- no manifest exists yet)
+- [x] Shared wire contract in `packages/protocol` (message types, close codes,
+      `PROTOCOL_VERSION` / `MIN_PROTOCOL_VERSION`, 10 MB frame cap)
 
 ### Backend
-- [ ] `POST /clusters` — create row, mint `aika_<clusterid>_<random>`, store `sha256(token)` only
-- [ ] Return the token exactly once, in the install command; never retrievable again
-- [ ] `WS /agent/connect` — authenticate against the hash, mark online, hold the socket
-- [ ] Heartbeat watchdog → mark `offline` after 90s of silence
-- [ ] `remoteAgentSource(clusterId)` — dispatch job, await evidence, 60s timeout
-- [ ] Clean failure path: "agent offline, last seen X" instead of a hung request
-- [ ] `DELETE /clusters/:id` — delete row **and** close the socket
-- [ ] Reject agents below a minimum protocol version with a clear message
+- [x] `POST /clusters` -- creates row, mints `aika_<43 chars base64url>`, stores `sha256(token)` only
+      (verified: stored hash == sha256(token); plaintext appears nowhere in the row)
+- [x] Token returned exactly once in the 201 response; name validation + 409 on duplicate
+- [x] `/agent/connect` -- authenticates **before** accepting the upgrade
+      (no token / garbage / well-formed-unknown -> 401; wrong path -> 404)
+- [x] Offline detection: close handler + missed-pong termination; boot marks all agent rows offline
+- [x] `remoteAgentSource(cluster)` -- dispatch job, await evidence, 60s timeout
+- [x] Clean failure path: 503 "offline; it has never connected" / "last seen N minute(s) ago"
+- [x] `DELETE /clusters/:id` -- deletes row **and** closes the socket (4004); agent exits, does not redial;
+      revoked token redial -> 401; history rows survive with `cluster_id` nulled
+- [x] Reject agents below `MIN_PROTOCOL_VERSION` (close 4002 + reason) -- **implemented, not exercised**
+      (only one protocol version exists)
+- [x] One live connection per cluster; a newer one replaces the older (4003) without
+      the old socket's close marking the cluster offline
+
+### Verified end to end (2026-09-14, local backend + agent process against kind)
+- [x] Investigation through the agent: ImagePullBackOff, correct root cause, 98%
+- [x] Backend restart -> agent reconnects on its own, cluster back online
+- [x] Agent killed -> row offline with `last_seen_at`, investigate returns 503
+- [x] Local kubeconfig clusters unaffected (regression run: 98%)
+
+### Before this reaches production
+- [ ] Caddy on EC2 routes only `/health /clusters /investigate` to the backend --
+      add `/agent/*` (and `/install.sh` in Phase 4), or agents get the SPA's index.html
+- [ ] Single-instance assumption: connections live in process memory. Fine for one
+      EC2 box; horizontal scaling needs job routing to the instance holding the socket
 
 ---
 
