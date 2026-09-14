@@ -124,8 +124,10 @@ Close the ownership holes while the app still behaves exactly as it does today.
 - [x] Local kubeconfig clusters unaffected (regression run: 98%)
 
 ### Before this reaches production
-- [ ] Caddy on EC2 routes only `/health /clusters /investigate` to the backend --
-      add `/agent/*` (and `/install.sh` in Phase 4), or agents get the SPA's index.html
+- [x] Caddy on EC2 routes `/agent/*` (and `/install.sh`) to the backend -- applied
+      2026-09-14 (backup `/etc/caddy/Caddyfile.bak.20260914112225`, validated, reloaded).
+      Phase 3 had already been deployed (6216f82) before this fix, so for a few hours
+      in production agents could not connect and cluster removal did not revoke
 - [ ] Single-instance assumption: connections live in process memory. Fine for one
       EC2 box; horizontal scaling needs job routing to the instance holding the socket
 
@@ -161,7 +163,13 @@ Close the ownership holes while the app still behaves exactly as it does today.
       inside a pod) -- reports `kind` from a real pod
 - [x] Test on kind -- one-liner `curl .../install.sh | bash` to registered in 16.7s;
       investigation through the pod agent: correct root cause, 98%
-- [ ] Test on the EC2 k3s cluster -- blocked on deploy + Caddy matcher
+- [x] Deployed to production (3cc1473, 2026-09-14 11:23 UTC). Through Caddy on the box:
+      `/install.sh` served as `text/x-shellscript`, `no-store`, 282 lines, 0 CR bytes,
+      valid bash, default server substituted as `https://ai-k8s-agent.duckdns.org`;
+      local-mode investigation of `aws-k3s` still succeeds after the deploy
+- [ ] Test the agent on the EC2 k3s cluster -- blocked on publishing the image (the
+      production cluster has no way to pull `aika-agent:dev`), and it cannot be
+      driven from the office network, which blocks `*.duckdns.org`
 - [ ] Test on one managed cluster (EKS/GKE free tier) if available
 - [ ] Publish the agent image -- default `ghcr.io/pushkal-vashishtha/aika-agent:0.1.0`
       **does not exist yet**; kind tests used `--image aika-agent:dev` + `kind load`
@@ -176,10 +184,11 @@ Close the ownership holes while the app still behaves exactly as it does today.
       capped backoff -- visible as climbing restarts, never a silent Running-but-dead pod
 
 ### Production blockers found while documenting Caddy
-- [ ] **Caddy `@api` matcher must become**
-      `/health /clusters /clusters/* /investigate /agent/* /install.sh` (docs updated).
-      `path /clusters` is exact-match, so in production today `DELETE /clusters/<id>`
-      would reach the SPA and **revocation would silently do nothing**
+- [x] **Caddy `@api` matcher fixed in production**:
+      `/health /clusters /clusters/* /investigate /agent/* /install.sh`.
+      Before the fix, probing through Caddy on the box confirmed the bug:
+      `DELETE /clusters/<id>` -> 405 from the file server, agent upgrade -> SPA HTML.
+      After: both reach the backend (401), SPA and `/health` unaffected
 
 ---
 
