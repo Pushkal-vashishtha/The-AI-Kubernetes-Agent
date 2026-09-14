@@ -49,16 +49,20 @@ Close the ownership holes while the app still behaves exactly as it does today.
 
 ## Phase 1 follow-ups (found during the deploy)
 
-- [ ] **Local-cluster status flaps between machines.** `syncLocalClusters()` marks
-      any of the owner's `mode='local'` rows offline when they are absent from
-      *this* machine's kubeconfig -- so the EC2 box marked the three kind
-      contexts offline, and the laptop will mark `aws-k3s` offline on its next
-      restart. Harmless today (nothing reads `status` yet) but it must be fixed
-      before Phase 5 shows status in the UI. Fix: tag local rows with the host
-      that owns them (`LOCAL_CLUSTER_HOST`/hostname column) and reconcile only
-      that host's rows.
-- [ ] Move `migrations/` into the repo -- it currently lives in `D:\Devops\`,
-      outside version control, so schema history exists only on the laptop.
+- [x] **Local-cluster status flapped between machines** -- fixed in 78608b5: local rows carry
+      `host` (migration 20260914125007, `LOCAL_CLUSTER_HOST`, default hostname); each backend
+      reconciles only its own rows and claims unclaimed legacy rows it can see. `GET /clusters`
+      reports `available`; investigating another host's local cluster is a clear 503.
+      Verified locally: laptop claimed its 3 kind contexts, left `aws-k3s` untouched and online.
+      Verified in production after deploy: EC2 sync "1 claimed, 0 offline" (claimed `aws-k3s` as
+      `ip-172-31-17-13`, laptop rows untouched); through Caddy, `available` true for EC2's cluster
+      and false for a laptop-tagged one, 503 naming `DESKTOP-SGN6CML` for the latter, and EC2's
+      own cluster still diagnosed at 100%
+- [x] Production demo re-seeded (`failure-lab/web-frontend`, ImagePullBackOff); live app
+      diagnoses it at 100%
+- [x] Migrations moved into the repo (`ai-kubernetes-agent/migrations/`, byte-identical);
+      InsForge CLI linked from the repo root; old folder renamed
+      `D:\Devops\migrations.moved-to-repo` with a pointer README
 
 ---
 
@@ -167,12 +171,14 @@ Close the ownership holes while the app still behaves exactly as it does today.
       `/install.sh` served as `text/x-shellscript`, `no-store`, 282 lines, 0 CR bytes,
       valid bash, default server substituted as `https://ai-k8s-agent.duckdns.org`;
       local-mode investigation of `aws-k3s` still succeeds after the deploy
-- [ ] Test the agent on the EC2 k3s cluster -- blocked on publishing the image (the
-      production cluster has no way to pull `aika-agent:dev`), and it cannot be
-      driven from the office network, which blocks `*.duckdns.org`
+- [x] Test the agent on the EC2 k3s cluster -- from inside EC2, the served installer with
+      **default image and server** pulled `ghcr.io/pushkal-vashishtha/aika-agent:0.1.0`,
+      registered over `wss://` through Caddy in 23s, and an investigation through it found
+      the demo's root cause at 100%; uninstalled and deleted afterwards
 - [ ] Test on one managed cluster (EKS/GKE free tier) if available
-- [ ] Publish the agent image -- default `ghcr.io/pushkal-vashishtha/aika-agent:0.1.0`
-      **does not exist yet**; kind tests used `--image aika-agent:dev` + `kind load`
+- [x] Publish the agent image -- `.github/workflows/agent-image.yml` (5b5f075) builds amd64+arm64
+      with `GITHUB_TOKEN`; `:edge` tracks main, a version tag is never overwritten.
+      `0.1.0` and `edge` confirmed anonymously pullable (package is public)
 
 ### Moved here from Phase 3, now verified in-pod
 - [x] Resource limits: requests 50m/64Mi, limits 250m/256Mi
