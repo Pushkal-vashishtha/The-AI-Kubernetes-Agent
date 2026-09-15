@@ -18,6 +18,23 @@ export const MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
 
 export const HEARTBEAT_INTERVAL_MS = 30_000;
 
+// The newest agent release. Must match agent/package.json, AGENT_VERSION and
+// the installer's default image (test/versions.test.js checks all four).
+// Agents older than this still work; the UI just offers an update.
+export const LATEST_AGENT_VERSION = "0.2.0";
+
+/** True when `version` is a parseable x.y.z older than LATEST_AGENT_VERSION. */
+export function isAgentOutdated(version, latest = LATEST_AGENT_VERSION) {
+  const parse = (v) => (typeof v === "string" && /^\d+\.\d+\.\d+/.test(v) ? v.split(".").map((n) => parseInt(n, 10)) : null);
+  const have = parse(version);
+  const want = parse(latest);
+  if (!have || !want) return false;
+  for (let i = 0; i < 3; i += 1) {
+    if (have[i] !== want[i]) return have[i] < want[i];
+  }
+  return false;
+}
+
 export const MESSAGE = {
   // agent -> backend
   HELLO: "hello", //       { protocol, agent_version, distro, kubernetes_version }

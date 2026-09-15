@@ -171,6 +171,11 @@ export default function ClusterSelector({
                           : ""}
                       </span>
                     </span>
+                    {cluster.update_available && (
+                      <span className="mt-1 block truncate text-[0.7rem] text-amber-300/90">
+                        Agent {cluster.agent_version} is out of date · Rotate for a fresh install command
+                      </span>
+                    )}
                   </span>
                   {cluster.available && (
                     <ArrowRightIcon

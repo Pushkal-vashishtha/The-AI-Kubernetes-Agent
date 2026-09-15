@@ -14,6 +14,8 @@ import {
   MAX_MESSAGE_BYTES,
   MESSAGE,
   MIN_PROTOCOL_VERSION,
+  LATEST_AGENT_VERSION,
+  isAgentOutdated,
   decode,
   encode,
 } from "@aika/protocol";
@@ -161,6 +163,9 @@ async function onConnection(socket, cluster) {
     logger.info(
       `Agent ${hello.agent_version ?? "?"} connected for cluster "${cluster.name}" (${hello.distro ?? "unknown"})`,
     );
+    if (isAgentOutdated(hello.agent_version)) {
+      logger.warn(`Agent for "${cluster.name}" is ${hello.agent_version}; latest is ${LATEST_AGENT_VERSION}`);
+    }
   });
 
   socket.on("error", (error) => logger.warn(`Agent socket error (${cluster.name}): ${error.message}`));

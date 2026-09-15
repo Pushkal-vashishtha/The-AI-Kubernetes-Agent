@@ -41,6 +41,8 @@ export interface ClusterInfo {
   status: ClusterStatus;
   distro: string | null;
   agent_version: string | null;
+  // The agent works but a newer release exists.
+  update_available?: boolean;
   last_seen_at: string | null;
   // Backend that registered a local (kubeconfig) cluster; null for agents.
   host: string | null;

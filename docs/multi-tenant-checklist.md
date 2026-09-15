@@ -272,7 +272,12 @@ Close the ownership holes while the app still behaves exactly as it does today.
       **Verified live (12/12):** agent A exits with `4001: token rotated`, cluster -> pending, old
       token -> 401, agent B with the new token connects, investigation through it works, unknown
       cluster -> 404
-- [ ] Agent upgrade notice when a newer version exists
+- [x] Agent upgrade notice: `LATEST_AGENT_VERSION` + `isAgentOutdated` in `@aika/protocol`;
+      `GET /clusters` returns `update_available` for agent clusters; the hub logs a warning when an
+      old agent connects; the cluster card says "Agent x.y.z is out of date · Rotate for a fresh
+      install command" (the new command uses the latest image). `backend/test/versions.test.js`
+      fails if agent/package.json, AGENT_VERSION, install.sh's default image and the protocol
+      constant ever disagree -- the drift that shipped 0.1.0 without redaction
 - [ ] Limits are per backend process (in-memory, like the agent hub) -- a second backend instance
       would need a shared store
 

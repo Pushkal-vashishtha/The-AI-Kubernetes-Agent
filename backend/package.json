@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test test/investigation.limiter.test.js test/agent-evidence-redaction.test.js"
+    "test": "node --test test/investigation.limiter.test.js test/agent-evidence-redaction.test.js test/versions.test.js"
   },
   "dependencies": {
     "@aika/collector": "*",

@@ -15,6 +15,7 @@ import {
 import { isAvailableHere, sourceForCluster } from "../services/evidence.source.js";
 import { requireAuth } from "./auth.middleware.js";
 import { createInvestigationLimiter } from "./investigation.limiter.js";
+import { isAgentOutdated } from "@aika/protocol";
 import config from "../core/config.js";
 import logger from "../core/logger.js";
 
@@ -36,6 +37,8 @@ function toClusterResponse(row) {
     status: row.status,
     distro: row.distro,
     agent_version: row.agent_version,
+    // An older agent still works, but misses fixes (0.1.0 did not redact).
+    update_available: row.mode === "agent" && isAgentOutdated(row.agent_version),
     last_seen_at: row.last_seen_at,
     host: row.host ?? null,
     // Can this backend investigate it right now? The UI should disable the rest.
