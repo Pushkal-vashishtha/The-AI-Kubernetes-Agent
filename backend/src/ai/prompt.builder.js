@@ -61,8 +61,20 @@ function truncationNote(truncation) {
     "Counts such as total_pods are complete. Look for the pattern across the shown items and say that more exist.\n";
 }
 
+/**
+ * A namespace-scoped agent sees only part of the cluster. Without saying so,
+ * the model would blame "missing" DNS, controllers or dependencies it simply
+ * could not see. Empty for a cluster-wide investigation.
+ */
+function scopeNote(namespaces) {
+  if (!Array.isArray(namespaces) || namespaces.length === 0) return "";
+  return `\n\nNOTE: this evidence covers ONLY these namespaces: ${namespaces.join(", ")}. ` +
+    "Nothing outside them (kube-system, cluster DNS, other apps) was visible. If the cause may lie outside, " +
+    "say so instead of assuming it is healthy or broken.\n";
+}
+
 export function buildTroubleshootingPrompt(investigation) {
-  const userPrompt = `Kubernetes investigation evidence collected at ${investigation.collected_at}:${truncationNote(investigation.truncation)}
+  const userPrompt = `Kubernetes investigation evidence collected at ${investigation.collected_at}:${scopeNote(investigation.namespaces)}${truncationNote(investigation.truncation)}
 
 ## Pod Status
 ${JSON.stringify(investigation.pods, null, 2)}

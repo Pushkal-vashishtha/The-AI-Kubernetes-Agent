@@ -3,6 +3,7 @@
 // clusters and for the dev loop.
 
 import { execFile } from "node:child_process";
+import { listAcrossNamespaces, parseNamespaces } from "./namespaces.js";
 
 const KUBECTL_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
@@ -89,13 +90,19 @@ async function runKubectlJson(args, options) {
  * A collector client backed by the kubectl binary.
  * `context` selects a kubeconfig context; omitted, kubectl uses the current one.
  */
-export function createKubectlClient({ context, kubeconfigPath, logger } = {}) {
+export function createKubectlClient({ context, kubeconfigPath, logger, namespaces } = {}) {
   const options = { context, kubeconfigPath, logger };
-  const list = (resource) => runKubectlJson(["get", resource, "-A"], options);
+  const scope = parseNamespaces(namespaces);
+  const list = (resource) =>
+    scope
+      ? listAcrossNamespaces(scope, (ns) => runKubectlJson(["get", resource, "-n", ns], options))
+      : runKubectlJson(["get", resource, "-A"], options);
 
   return {
     kind: "kubectl",
     context: context ?? null,
+    // null = cluster-wide; otherwise the only namespaces this client reads.
+    namespaces: scope,
 
     listPods: () => list("pods"),
     listEvents: () => list("events"),

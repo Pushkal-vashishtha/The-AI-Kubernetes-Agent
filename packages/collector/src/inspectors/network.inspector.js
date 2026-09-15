@@ -72,6 +72,21 @@ export async function inspectNetwork(client) {
     }
   }
 
+  // A namespace-scoped client cannot see kube-system, and "no DNS endpoints"
+  // would then be a false alarm. Say it was not checked instead.
+  if (client.namespaces && !client.namespaces.includes("kube-system")) {
+    return {
+      healthy: issues.length === 0,
+      total_services: services.length,
+      issues,
+      dns: {
+        healthy: null,
+        detail: "Cluster DNS not checked: the agent can only read namespaces " + client.namespaces.join(", "),
+      },
+      error: null,
+    };
+  }
+
   // DNS health: kube-dns / CoreDNS must have ready endpoints for cluster DNS to work.
   const dnsEndpoints =
     endpointsByService.get(endpointsKey("kube-system", "kube-dns")) ??

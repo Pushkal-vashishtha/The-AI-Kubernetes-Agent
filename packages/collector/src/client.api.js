@@ -6,6 +6,7 @@
 // objects under `data.items` -- so the inspectors cannot tell them apart.
 
 import { CoreV1Api, AppsV1Api, KubeConfig } from "@kubernetes/client-node";
+import { listAcrossNamespaces, parseNamespaces } from "./namespaces.js";
 
 /**
  * Turn any client-node failure into the { success, error } shape.
@@ -74,7 +75,7 @@ function normalizeDates(value) {
  * mounted at /var/run/secrets/...); pass `kubeconfig` to point it elsewhere,
  * which is only useful for testing the agent outside a cluster.
  */
-export function createApiClient({ kubeconfig, logger } = {}) {
+export function createApiClient({ kubeconfig, logger, namespaces } = {}) {
   const config = new KubeConfig();
   if (kubeconfig) {
     config.loadFromFile(kubeconfig);
@@ -97,16 +98,39 @@ export function createApiClient({ kubeconfig, logger } = {}) {
     }
   };
 
+  const scope = parseNamespaces(namespaces);
+  // Cluster-wide when unscoped; one namespaced call per namespace otherwise,
+  // since a Role-only ServiceAccount is forbidden from the *ForAllNamespaces calls.
+  const list = (label, allNamespaces, oneNamespace) =>
+    scope
+      ? listAcrossNamespaces(scope, (namespace) =>
+          call(`${label} -n ${namespace}`, () => oneNamespace({ namespace })),
+        )
+      : call(label, allNamespaces);
+
   return {
     kind: "api",
     context: null,
+    namespaces: scope,
 
-    listPods: () => call("list pods", () => core.listPodForAllNamespaces()),
-    listEvents: () => call("list events", () => core.listEventForAllNamespaces()),
+    listPods: () =>
+      list("list pods", () => core.listPodForAllNamespaces(), (a) => core.listNamespacedPod(a)),
+    listEvents: () =>
+      list("list events", () => core.listEventForAllNamespaces(), (a) => core.listNamespacedEvent(a)),
     listDeployments: () =>
-      call("list deployments", () => apps.listDeploymentForAllNamespaces()),
-    listServices: () => call("list services", () => core.listServiceForAllNamespaces()),
-    listEndpoints: () => call("list endpoints", () => core.listEndpointsForAllNamespaces()),
+      list(
+        "list deployments",
+        () => apps.listDeploymentForAllNamespaces(),
+        (a) => apps.listNamespacedDeployment(a),
+      ),
+    listServices: () =>
+      list("list services", () => core.listServiceForAllNamespaces(), (a) => core.listNamespacedService(a)),
+    listEndpoints: () =>
+      list(
+        "list endpoints",
+        () => core.listEndpointsForAllNamespaces(),
+        (a) => core.listNamespacedEndpoints(a),
+      ),
 
     podLogs: async ({ name, namespace, tailLines, previous = false }) => {
       // The API reads one container at a time; kubectl's --all-containers has

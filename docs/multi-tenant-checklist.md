@@ -155,9 +155,11 @@ Close the ownership holes while the app still behaves exactly as it does today.
       `auth can-i create clusterroles`; token/server/image validated before templating
       (token with `"; rm -rf /`, server with `$(id)`, non-`aika_` token all refused)
 - [x] Flags: `--token` (or `AIKA_TOKEN`), `--server`, `--image`, `--dry-run`, `--uninstall`
-- [-] `--namespaces` -- **not shipped:** the collector uses cluster-wide list calls, so a
-      namespace-scoped Role would install cleanly and then fail every investigation.
-      Needs per-namespace listing in the collector first (Phase 6 item)
+- [x] `--namespaces a,b` (agent 0.3.0) -- per-namespace Role + RoleBinding instead of the
+      ClusterRole (no `nodes`), `AIKA_NAMESPACES` on the Deployment; preflight checks each namespace
+      exists and `can-i create roles` there. Switching scope cleans up: scoped install deletes any
+      old ClusterRoleBinding (else cluster-wide read would silently remain); cluster-wide install
+      deletes old Roles. See Phase 6 for the collector side
 - [x] Idempotent: re-run exits 0, same 5 labelled objects, 1 pod; bounces the pod so a
       changed token/server in the Secret takes effect
 - [x] Waits for rollout, then for "registered as cluster" in the logs; fails loudly with
@@ -263,7 +265,13 @@ Close the ownership holes while the app still behaves exactly as it does today.
       `investigation.truncation` records `{ shown, total }` per cut list. 3 unit tests with a fake client
 - [x] Tell the LLM explicitly what was truncated: the prompt gains a NOTE line ("unhealthy pods:
       showing 20 of 137 ...") only when something was cut
-- [ ] Namespace-scoped install (collector needs per-namespace listing first)
+- [x] Namespace-scoped install: both collector clients take `namespaces` and list per namespace
+      (`listAcrossNamespaces`; one forbidden namespace fails the list rather than hiding it);
+      the network inspector reports DNS as "not checked" when kube-system is out of scope instead
+      of a false outage; evidence carries `namespaces` and the prompt tells the model what it could
+      not see. 8 unit tests. **Verified live on kind (9/9)** as the real ServiceAccount: reads
+      scope-a + scope-b, finds the ImagePullBackOff pod, nothing from outside, cluster-wide list and
+      kube-system both Forbidden; `can-i list secrets` = no
 - [x] Token rotation: `POST /clusters/:id/rotate-token` (owner-only, agent clusters only) mints a new
       token, stores only its hash, sets status `pending`, and closes the live socket with **4001** --
       the code every agent version (including the published 0.1.0) already treats as fatal, so the

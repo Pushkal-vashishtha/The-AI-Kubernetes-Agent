@@ -20,7 +20,7 @@ import {
 import { detectCluster } from "./cluster.info.js";
 import log from "./log.js";
 
-export const AGENT_VERSION = "0.2.0";
+export const AGENT_VERSION = "0.3.0";
 
 const config = {
   token: process.env.AIKA_TOKEN ?? "",
@@ -31,6 +31,9 @@ const config = {
   // Extra redaction rules on top of the built-ins (JSON array or one regex per
   // line). They run here, in the cluster, before evidence is sent anywhere.
   redactPatterns: parseRedactPatterns(process.env.AIKA_REDACT_PATTERNS),
+  // Set by `install.sh --namespaces`: read only these namespaces (Role, not
+  // ClusterRole). Unset means cluster-wide.
+  namespaces: process.env.AIKA_NAMESPACES ?? "",
 };
 
 // Close codes after which redialing cannot help -- the user has to act.
@@ -193,7 +196,13 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
 const redactor = createRedactor({ extraPatterns: config.redactPatterns, logger: log });
-const client = await createApiClient({ kubeconfig: config.kubeconfig, logger: log });
+let client;
+try {
+  client = await createApiClient({ kubeconfig: config.kubeconfig, logger: log, namespaces: config.namespaces });
+} catch (error) {
+  fail(`AIKA_NAMESPACES: ${error.message}`);
+}
+log.info(client.namespaces ? `scoped to namespaces: ${client.namespaces.join(", ")}` : "scope: cluster-wide");
 clusterInfo = await detectCluster(config.kubeconfig);
 log.info(
   `agent ${AGENT_VERSION} starting; cluster looks like ${clusterInfo.distro} ${clusterInfo.kubernetes_version ?? ""}`.trim(),

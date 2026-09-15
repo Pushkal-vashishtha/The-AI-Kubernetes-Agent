@@ -21,7 +21,7 @@ export const HEARTBEAT_INTERVAL_MS = 30_000;
 // The newest agent release. Must match agent/package.json, AGENT_VERSION and
 // the installer's default image (test/versions.test.js checks all four).
 // Agents older than this still work; the UI just offers an update.
-export const LATEST_AGENT_VERSION = "0.2.0";
+export const LATEST_AGENT_VERSION = "0.3.0";
 
 /** True when `version` is a parseable x.y.z older than LATEST_AGENT_VERSION. */
 export function isAgentOutdated(version, latest = LATEST_AGENT_VERSION) {

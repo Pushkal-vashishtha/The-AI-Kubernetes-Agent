@@ -11,6 +11,6 @@
     "@kubernetes/client-node": "^1.0.0"
   },
   "scripts": {
-    "test": "node --test test/redact.test.js test/collect.test.js"
+    "test": "node --test test/redact.test.js test/collect.test.js test/namespaces.test.js"
   }
 }

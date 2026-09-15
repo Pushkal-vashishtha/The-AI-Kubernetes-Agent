@@ -17,8 +17,8 @@ set -euo pipefail
 # Substituted by the backend when it serves this script, so the one-liner
 # needs no --server. Left as-is when the script is run from a checkout.
 DEFAULT_SERVER="__AIKA_DEFAULT_SERVER__"
-# 0.2.0 is the first agent that redacts secrets inside the cluster.
-DEFAULT_IMAGE="ghcr.io/pushkal-vashishtha/aika-agent:0.2.0"
+# 0.2.0 is the first agent that redacts secrets; 0.3.0 adds --namespaces.
+DEFAULT_IMAGE="ghcr.io/pushkal-vashishtha/aika-agent:0.3.0"
 
 NAMESPACE="aika-system"
 NAME="aika-agent"
@@ -27,6 +27,7 @@ MIN_K8S_MINOR=24
 TOKEN="${AIKA_TOKEN:-}"
 SERVER=""
 IMAGE="$DEFAULT_IMAGE"
+NAMESPACES=""
 DRY_RUN=0
 UNINSTALL=0
 
@@ -48,6 +49,8 @@ Usage: install.sh --token <aika_token> [options]
   --token <token>    Agent token from "Add cluster" (or set AIKA_TOKEN)
   --server <url>     Backend URL (default: the server this script came from)
   --image <image>    Agent image (default: the published release)
+  --namespaces <a,b> Read only these namespaces (Roles instead of a ClusterRole);
+                     default: the whole cluster
   --dry-run          Print the manifest and exit; changes nothing
   --uninstall        Remove the agent and everything this script created
   -h, --help         Show this help
@@ -65,6 +68,8 @@ while [ $# -gt 0 ]; do
     --server=*)  SERVER="${1#*=}"; shift ;;
     --image)     IMAGE="${2:-}"; shift 2 ;;
     --image=*)   IMAGE="${1#*=}"; shift ;;
+    --namespaces)   NAMESPACES="${2:-}"; shift 2 ;;
+    --namespaces=*) NAMESPACES="${1#*=}"; shift ;;
     --dry-run)   DRY_RUN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     -h|--help)   usage; exit 0 ;;
@@ -103,8 +108,10 @@ fi
 if [ "$UNINSTALL" -eq 1 ]; then
   [ "$DRY_RUN" -eq 1 ] && die "--uninstall and --dry-run cannot be combined"
   say "Removing the agent from ${BOLD}$CONTEXT${RESET}..."
-  kubectl delete clusterrolebinding "$NAME" --ignore-not-found >/dev/null
-  kubectl delete clusterrole "$NAME" --ignore-not-found >/dev/null
+  kubectl delete clusterrolebinding "$NAME" --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete clusterrole "$NAME" --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete rolebinding,role -A -l "app.kubernetes.io/name=$NAME" --ignore-not-found >/dev/null 2>&1 \
+    || warn "Could not list Roles cluster-wide; remove any left in scoped namespaces: kubectl -n <ns> delete role,rolebinding $NAME"
   kubectl delete namespace "$NAMESPACE" --ignore-not-found --wait=true >/dev/null
   ok "Agent removed. The cluster will show as offline; remove it in the dashboard to revoke its token."
   exit 0
@@ -130,6 +137,107 @@ case "$SERVER" in
   http://*) warn "Using plain http:// -- fine for local testing, never for a real cluster" ;;
 esac
 printf '%s' "$IMAGE" | grep -Eq '^[A-Za-z0-9./:@_-]+$' || die "--image contains unexpected characters"
+
+# "shop, payments" -> "payments shop": split on commas/spaces, validate, dedupe.
+SCOPED_NAMESPACES=""
+if [ -n "$NAMESPACES" ]; then
+  for ns in $(printf '%s' "$NAMESPACES" | tr ',' ' '); do
+    printf '%s' "$ns" | grep -Eq '^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$' \
+      || die "--namespaces: \"$ns\" is not a valid namespace name"
+    SCOPED_NAMESPACES="$SCOPED_NAMESPACES $ns"
+  done
+  SCOPED_NAMESPACES="$(printf '%s\n' $SCOPED_NAMESPACES | sort -u | tr '\n' ' ')"
+  SCOPED_NAMESPACES="${SCOPED_NAMESPACES% }"
+  [ -n "$SCOPED_NAMESPACES" ] || die "--namespaces was given but names no namespace"
+fi
+# Comma-separated, as the agent reads AIKA_NAMESPACES.
+SCOPED_CSV="$(printf '%s' "$SCOPED_NAMESPACES" | tr ' ' ',')"
+
+# Read-only. The only verbs anywhere in these rules are get, list and watch.
+# "nodes" is cluster-scoped, so only the cluster-wide role can have it; the
+# agent uses it just to guess the distro and copes without.
+rbac() {
+  if [ -z "$SCOPED_NAMESPACES" ]; then
+    cat <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: $NAME
+  labels:
+    app.kubernetes.io/name: $NAME
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "endpoints", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: $NAME
+  labels:
+    app.kubernetes.io/name: $NAME
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: $NAME
+subjects:
+  - kind: ServiceAccount
+    name: $NAME
+    namespace: $NAMESPACE
+---
+EOF
+    return
+  fi
+
+  for ns in $SCOPED_NAMESPACES; do
+    cat <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: $NAME
+  namespace: $ns
+  labels:
+    app.kubernetes.io/name: $NAME
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: $NAME
+  namespace: $ns
+  labels:
+    app.kubernetes.io/name: $NAME
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: $NAME
+subjects:
+  - kind: ServiceAccount
+    name: $NAME
+    namespace: $NAMESPACE
+---
+EOF
+  done
+}
+
+# Only emitted when scoped; an unscoped agent reads the whole cluster.
+scope_env() {
+  [ -n "$SCOPED_CSV" ] || return 0
+  cat <<EOF
+          env:
+            - name: AIKA_NAMESPACES
+              value: "$SCOPED_CSV"
+EOF
+}
 
 manifest() {
   cat <<EOF
@@ -161,36 +269,7 @@ stringData:
   AIKA_TOKEN: "$TOKEN"
   AIKA_SERVER: "$SERVER"
 ---
-# Read-only. The only verbs anywhere in this role are get, list and watch.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: $NAME
-  labels:
-    app.kubernetes.io/name: $NAME
-rules:
-  - apiGroups: [""]
-    resources: ["pods", "pods/log", "events", "services", "endpoints", "nodes"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets"]
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: $NAME
-  labels:
-    app.kubernetes.io/name: $NAME
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: $NAME
-subjects:
-  - kind: ServiceAccount
-    name: $NAME
-    namespace: $NAMESPACE
----
+$(rbac)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -227,6 +306,7 @@ spec:
           envFrom:
             - secretRef:
                 name: $NAME
+$(scope_env)
           resources:
             requests:
               cpu: 50m
@@ -247,12 +327,38 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-kubectl auth can-i create clusterroles >/dev/null 2>&1 \
-  || die "Your kubectl user cannot create ClusterRoles -- ask a cluster admin to run this"
+if [ -z "$SCOPED_NAMESPACES" ]; then
+  kubectl auth can-i create clusterroles >/dev/null 2>&1 \
+    || die "Your kubectl user cannot create ClusterRoles -- ask a cluster admin, or limit the agent with --namespaces"
+else
+  for ns in $SCOPED_NAMESPACES; do
+    kubectl get namespace "$ns" >/dev/null 2>&1 || die "Namespace \"$ns\" does not exist"
+    kubectl auth can-i create roles -n "$ns" >/dev/null 2>&1 \
+      || die "Your kubectl user cannot create Roles in namespace \"$ns\""
+  done
+fi
 
 say "Installing the agent into ${BOLD}$CONTEXT${RESET}..."
 manifest | kubectl apply -f - >/dev/null
-ok "Applied manifest (namespace $NAMESPACE)"
+if [ -z "$SCOPED_NAMESPACES" ]; then
+  # Switching back from a scoped install: drop the per-namespace grants.
+  kubectl delete rolebinding,role -A -l "app.kubernetes.io/name=$NAME" --ignore-not-found >/dev/null 2>&1 || true
+  ok "Applied manifest (namespace $NAMESPACE, read-only across the cluster)"
+else
+  # Switching from a cluster-wide install: a leftover ClusterRoleBinding would
+  # quietly keep cluster-wide read access, so it must go.
+  kubectl delete clusterrolebinding "$NAME" --ignore-not-found >/dev/null 2>&1 \
+    || warn "Could not check for an old cluster-wide binding; if one exists: kubectl delete clusterrolebinding,clusterrole $NAME"
+  kubectl delete clusterrole "$NAME" --ignore-not-found >/dev/null 2>&1 || true
+  # Roles from an earlier install in namespaces no longer listed.
+  for ns in $(kubectl get role -A -l "app.kubernetes.io/name=$NAME" -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{end}' 2>/dev/null); do
+    case " $SCOPED_NAMESPACES " in
+      *" $ns "*) ;;
+      *) kubectl -n "$ns" delete role,rolebinding "$NAME" --ignore-not-found >/dev/null 2>&1 || true ;;
+    esac
+  done
+  ok "Applied manifest (namespace $NAMESPACE, read-only in: $SCOPED_NAMESPACES)"
+fi
 
 # A changed token or server lives in the Secret, which does not by itself
 # restart the pod -- bounce it so re-running the installer takes effect.

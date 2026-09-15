@@ -16,6 +16,7 @@ import { createRedactor } from "./redact.js";
 export { createKubectlClient, runKubectl, runKubectlJson } from "./client.kubectl.js";
 export { inspectPods, collectLogs, analyzeEvents, inspectDeployments, inspectNetwork };
 export { createRedactor, parseRedactPatterns } from "./redact.js";
+export { parseNamespaces, listAcrossNamespaces } from "./namespaces.js";
 
 // A large broken cluster can produce hundreds of findings. The model needs
 // the pattern, not every instance -- and an unbounded prompt is slow, costly
@@ -115,6 +116,8 @@ export async function collectEvidence(
     collected_at: new Date().toISOString(),
     duration_ms: Date.now() - startedAt,
     cluster_context: client.context ?? null,
+    // null = whole cluster; otherwise the evidence covers only these namespaces.
+    namespaces: client.namespaces ?? null,
     cluster_reachable: pods.error === null,
     issues_found: issuesFound,
     ...sections,
