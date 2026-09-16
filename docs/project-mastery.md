@@ -13,7 +13,8 @@ to perform it:
 | [interview-prep.md](interview-prep.md) | The pitch, Q&A drills, the crash-loop bug story |
 | [demo-runbook.md](demo-runbook.md) | The live 5-scenario demo script |
 | [deployment-ec2.md](deployment-ec2.md) | The exact production setup you performed |
-| [architecture.md](architecture.md) | Original architecture notes |
+| [architecture.md](architecture.md) | Current architecture: topology, agent protocol, security model |
+| [multi-tenant-checklist.md](multi-tenant-checklist.md) | How the any-cluster agent was built, phase by phase, with verification notes |
 
 ---
 
@@ -387,8 +388,10 @@ with 5s delay.
 
 ### Multi-cluster in production
 
-The cluster picker is literally the contexts in the kubeconfig at
-`KUBECONFIG_PATH` — zero app-side configuration. Adding a cluster = merge its
+There are now two ways in (Part 10): any user can enrol a cluster with the
+agent, and the operator's own kubeconfig clusters are still registered at
+boot. For the kubeconfig path, the cards are the contexts in the kubeconfig at
+`KUBECONFIG_PATH`, synced into the `clusters` table for `LOCAL_CLUSTER_OWNER`. Adding a cluster = merge its
 kubeconfig (`KUBECONFIG=a:b kubectl config view --flatten > merged`), point
 `KUBECONFIG_PATH` at the merged file, restart the unit. Remote-cluster
 gotchas: the `server:` URL must be reachable *from EC2*, and its TLS cert
@@ -529,9 +532,99 @@ precisely when a free-tier user stops the instance to save hours. Chosen
 design: no EIP; update DuckDNS after each start. Lesson: free-tier
 engineering means reading the billing conditions, not just the feature list.
 
+### Multi-tenant agent
+
+**12. The redaction that shipped without redacting.** Redaction was merged
+and the image rebuilt, yet the installer's default `aika-agent:0.1.0` had no
+`redact.js`. The publish workflow never overwrites a version tag, and nobody
+bumped the version, so `0.1.0` stayed the old build — while the backend
+trusted agents to redact. Fix: the backend redacts agent evidence again
+(defence in depth), agent bumped to `0.2.0`, and a test now fails if the four
+version strings disagree. Lesson: immutable tags are right, but they turn a
+forgotten bump into a silent stale release — make the bump impossible to forget.
+
+**13. Caddy's exact-match path.** `DELETE /clusters/<id>` "worked" but nothing
+was deleted. The Caddy matcher listed `/clusters` but not `/clusters/*`, so the
+request fell through to the static file server and got a harmless-looking
+response. Fix: add `/clusters/*` and `/agent/*`. Lesson: reverse-proxy
+matchers are exact unless you say otherwise — test every route through the
+proxy, not only against `localhost:8000`.
+
+**14. The scoped agent that would have failed every run.** A `--namespaces`
+installer flag was easy to write — a Role instead of a ClusterRole — but the
+collector used `listPodForAllNamespaces`, which a Role forbids. It would have
+installed cleanly and failed every investigation. It was held back until the
+collector listed per namespace, DNS reported "not checked" instead of a false
+outage, and the prompt told the LLM what it could not see. Lesson: least
+privilege is a code change, not a YAML change.
+
+**15. Switching scope must remove the old grant.** Re-running the installer
+with `--namespaces` after a cluster-wide install would leave the old
+ClusterRoleBinding in place — the agent would silently keep reading the whole
+cluster. The installer now deletes the grant of the other mode on every run,
+verified with `kubectl auth can-i` in both directions.
+
 ---
 
-## Part 10 — Cheat sheet
+## Part 10 — Multi-tenant: any cluster via an agent
+
+**The problem.** The original design read a kubeconfig on the server. That
+works for the operator's clusters but not for anyone else: users would have to
+upload admin credentials and expose their API server to the internet.
+
+**The design: an outbound agent.**
+
+```mermaid
+flowchart LR
+    U["User clicks + Add cluster"] --> T["Backend mints aika_ token<br/>(stores only SHA-256)"]
+    T --> C["One-line install command"]
+    C --> A["Agent pod in aika-system<br/>read-only RBAC"]
+    A -- "outbound WSS + Bearer token" --> H["Hub /agent/connect"]
+    H --> I["Investigate → agent collects<br/>→ redacted evidence back"]
+```
+
+**Why outbound instead of kubeconfig upload** (the interview answer):
+
+| Kubeconfig upload | Outbound agent |
+|---|---|
+| We hold users' cluster credentials | We hold a hash of a token that can only talk to us |
+| API server must be reachable from our server | Needs only outbound HTTPS; works behind NAT/firewalls |
+| Whatever permissions the kubeconfig has (often admin) | A ServiceAccount the user created: `list` + `get pods/log` only |
+| Revoking means rotating cluster credentials | Remove or rotate in the dashboard; the socket closes at once |
+| Secrets leave the cluster raw | Redacted inside the cluster, then again on the backend |
+
+**Key decisions and their why:**
+
+- **Token in the `Authorization` header, checked before the upgrade.** URLs
+  end up in proxy logs; rejecting before upgrade means no socket for strangers.
+- **Only the hash is stored.** A database leak does not hand out agent tokens.
+- **Close codes as the contract.** `4001` (bad/rotated token), `4002` (protocol
+  too old) and `4004` (cluster removed) are fatal — the agent exits instead of
+  hammering the backend with a dead token. Others reconnect with jittered
+  backoff so a fleet doesn't stampede a restarted backend.
+- **Same collector everywhere.** `packages/collector` runs in the backend
+  (kubectl client) and in the agent (Kubernetes API client) and produces
+  identical evidence, so the AI layer never knows where it came from.
+- **Least privilege by default, narrower on request.** ClusterRole with no
+  Secrets/ConfigMaps; `--namespaces` swaps in per-namespace Roles, and the
+  prompt is told which namespaces it saw.
+- **Evidence caps.** Lists cut at 20 after counting, so totals stay exact and
+  one broken cluster cannot blow the context window or the bill.
+- **Per-user limits.** One running investigation and 20 per hour each: the
+  LLM is the expensive part, and it's now reachable by any signed-up user.
+- **Tenancy in two places.** Routes check ownership, and Postgres RLS enforces
+  it again, so one missed `WHERE user_id` is not a data leak.
+
+**What it does not do (by design):** no watch loops, no CRDs/operator, no
+write access, no auto-remediation. The agent is a dumb job runner.
+
+**Known limit to name before they ask:** agent sockets and rate limits live
+in one process's memory. Scaling out needs job routing to the instance holding
+a cluster's socket (Redis pub/sub or sticky routing by cluster id).
+
+---
+
+## Part 11 — Cheat sheet
 
 **Numbers**
 
@@ -569,6 +662,15 @@ kubectl apply -f test-scenarios/02-imagepullbackoff.yaml
 ```
 
 **Future-scope answers, ranked**: approval-gated auto-fix → CI e2e suite
-(kind inside GitHub Actions asserting on diagnoses) → in-cluster deployment
-with ServiceAccount RBAC (Path C) → investigation queue + evidence caching
-for scale.
+(kind inside GitHub Actions asserting on diagnoses) → shared store (Redis) so
+several backends can hold agent sockets → investigation queue + evidence
+caching for scale. (In-cluster deployment with ServiceAccount RBAC is done:
+that is the agent, Part 10.)
+
+```bash
+# Agent operations
+curl -sSL https://ai-k8s-agent.duckdns.org/install.sh | bash -s -- --token aika_... [--namespaces a,b]
+kubectl -n aika-system logs deploy/aika-agent            # "registered as cluster ..."
+kubectl auth can-i list secrets -A --as=system:serviceaccount:aika-system:aika-agent   # → no
+curl -sSL https://ai-k8s-agent.duckdns.org/install.sh | bash -s -- --uninstall
+```

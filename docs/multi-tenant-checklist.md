@@ -144,8 +144,8 @@ Close the ownership holes while the app still behaves exactly as it does today.
       instead of a YAML file that would drift from the script
 - [x] Namespace (`pod-security.kubernetes.io/enforce: restricted`), ServiceAccount,
       Secret (`stringData`, token never on a command line), Deployment
-- [x] Read-only ClusterRole: get/list/watch on pods, pods/log, events, services,
-      endpoints, nodes, deployments, replicasets -- verified with `auth can-i` as the SA:
+- [x] Read-only ClusterRole (narrowed in the Docs & release security review to `list` +
+      `get pods/log`; originally get/list/watch incl. replicasets) -- verified with `auth can-i` as the SA:
       create/delete pods, patch deployments, **get secrets** all `no`
 - [x] ClusterRoleBinding
 - [x] `install/install.sh` served at `/install.sh`, with the backend's public origin
@@ -219,9 +219,9 @@ Close the ownership holes while the app still behaves exactly as it does today.
 - [x] `npm run build` clean (tsc + vite)
 - [x] Deletions published too: migration 20260914130704 adds an AFTER DELETE trigger
       (`status: "deleted"`); probed arriving ~0.8s after the DELETE
-- [ ] **Browser walkthrough** -- not done: the Claude-in-Chrome extension was not connected.
-      Dev servers left running at http://localhost:3000 for a manual check
-- [ ] Deploy (push) -- held until the UI has been looked at
+- [x] **Browser walkthrough** -- done manually on production (2026-09-16): Add cluster, install,
+      Connected, out-of-date notice, Rotate, investigate, namespace-scoped install, remove
+- [x] Deploy (push) -- live on https://ai-k8s-agent.duckdns.org
 
 ---
 
@@ -296,13 +296,25 @@ Close the ownership holes while the app still behaves exactly as it does today.
 
 ## Docs & release
 
-- [ ] `prompts/06-prompt-multi-tenant-clusters.md` (keep the prompt-driven history intact)
-- [ ] `docs/architecture.md` — new agent topology diagram
-- [ ] `docs/deployment-ec2.md` — `LOCAL_CLUSTER_OWNER`, serving `/install.sh`, WSS through Caddy
-- [ ] `docs/project-mastery.md` — why outbound agent over kubeconfig upload; RBAC + revocation reasoning
-- [ ] `docs/demo-runbook.md` — add the "install on a fresh cluster in 60 seconds" demo
-- [ ] README: multi-tenant section, updated roadmap
-- [ ] Security review of the agent RBAC before publishing the manifest
+- [x] `prompts/06-prompt-multi-tenant-clusters.md` (keep the prompt-driven history intact)
+- [x] `docs/architecture.md` — rewritten: topology + investigation sequence diagrams, components,
+      security model, known limits (the old version still said "kubectl only, no auth yet")
+- [x] `docs/deployment-ec2.md` — root `npm ci` (workspaces), optional env vars, onboarding clusters
+      with the agent, releasing an agent version, changing the OpenRouter key, new troubleshooting rows
+      (`LOCAL_CLUSTER_OWNER` and the Caddy `/agent/*` matcher were already documented)
+- [x] `docs/project-mastery.md` — Part 10 (outbound agent vs kubeconfig upload, token/close-code/RBAC
+      reasoning), war stories 12–15, cheat sheet agent commands
+- [x] `docs/demo-runbook.md` — "any cluster in 60 seconds" beat with narration, follow-ups
+      (namespaces, rotate, uninstall) and troubleshooting
+- [x] README: "Add any cluster" section, new diagram, structure, API table (clusters CRUD, rotate,
+      install.sh, agent WS), env vars, build stage 7, lessons, roadmap
+- [x] Security review of the agent RBAC: compared the grant with every API call the agent makes.
+      Removed unused `watch`, `get` (except `pods/log`) and `replicasets`; now `list` on pods, events,
+      services, endpoints, deployments (+ nodes cluster-wide) and `get` on `pods/log`. Confirmed the
+      evidence never includes pod `spec` (env values), only `status`. **Verified live on kind** in both
+      modes: all five evidence sections collect without error, pod logs read, `can-i watch` = no.
+      Residual risk, accepted: pod logs can contain secrets -- mitigated by redaction in the agent
+      and again on the backend. Existing installs keep the wider role until the installer is re-run
 - [ ] Commit + push to `Pushkal-vashishtha/The-AI-Kubernetes-Agent` (personal identity only — never the work account)
 
 ---

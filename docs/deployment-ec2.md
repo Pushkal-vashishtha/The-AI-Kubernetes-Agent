@@ -215,8 +215,11 @@ GitHub with read access to this repo and clone with
 ## Step 7 — Backend: env + smoke test
 
 ```bash
-cd ~/The-AI-Kubernetes-Agent/backend
-npm install
+# npm workspaces: install from the repo root so the backend gets the shared
+# @aika/collector and @aika/protocol packages linked in.
+cd ~/The-AI-Kubernetes-Agent
+npm ci --omit=dev
+cd backend
 nano .env
 ```
 
@@ -232,6 +235,14 @@ LOCAL_CLUSTER_OWNER=<your InsForge user id>
 INSFORGE_URL=<from local backend/.env>
 INSFORGE_API_KEY=<from local backend/.env>
 ```
+
+Optional settings (defaults shown; leave them out unless you need to change them):
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `LOCAL_CLUSTER_HOST` | the machine's hostname | Name this backend registers its kubeconfig clusters under; other backends show them as "On <host>" and cannot investigate them |
+| `INVESTIGATE_MAX_PER_HOUR` | `20` | Investigations each user may start per hour (plus one at a time); beyond it the API returns `429` |
+| `AIKA_REDACT_PATTERNS` | none | Extra secret patterns to redact, as a JSON array or one regex per line, on top of the built-in rules |
 
 > Getting the values there: open the local files on Windows and paste into
 > `nano`, or copy them up first from PowerShell and then edit
@@ -434,8 +445,8 @@ GitHub.
 
 ```bash
 cd ~/The-AI-Kubernetes-Agent && git pull
-# backend changed?
-cd backend && npm install && sudo systemctl restart aika-backend
+# backend or packages/ changed? install from the repo root (workspaces)
+npm ci --omit=dev && sudo systemctl restart aika-backend
 ```
 
 Frontend changed? Rebuild on your laptop and `scp` the `dist/` up again
@@ -516,6 +527,48 @@ include that address (k3s: install with `--tls-san <public-ip>`). Note the
 copied config embeds client certs that k3s rotates ~yearly — re-copy if auth
 errors appear long after setup.
 
+**Onboarding any other cluster (the agent)**: no kubeconfig copying needed.
+In the dashboard click **+ Add cluster**, then run the one-line command it
+shows on a machine whose `kubectl` points at that cluster (Git Bash on
+Windows, not PowerShell):
+
+```bash
+curl -sSL https://<you>.duckdns.org/install.sh | bash -s -- --token aika_...
+# only some namespaces:        ... --namespaces shop,payments
+# see what it would create:    ... --dry-run
+# remove it again:             curl -sSL https://<you>.duckdns.org/install.sh | bash -s -- --uninstall
+```
+
+The agent dials out to `/agent/connect` over WSS through Caddy, so the
+cluster needs outbound HTTPS only. The token is shown once; lost or leaked →
+**Rotate** on the card and re-run the new command. Removing the card revokes
+the token.
+
+**Releasing a new agent version**: any change under `agent/` or `packages/`
+must bump the version in `agent/package.json`, `AGENT_VERSION` in
+`agent/src/index.js`, `LATEST_AGENT_VERSION` in `packages/protocol`, and
+`DEFAULT_IMAGE` in `install/install.sh` (`backend/test/versions.test.js`
+fails if they disagree). The **Publish agent image** workflow never
+overwrites an existing version tag, so without a bump the installer keeps
+shipping the old image. Cards of older agents show "out of date".
+
+**Changing the OpenRouter key** (e.g. out of credits — investigations fail
+with `OpenRouter returned HTTP 402`): update `OPENROUTER_API_KEY` in
+`~/The-AI-Kubernetes-Agent/backend/.env` on the instance, then
+`sudo systemctl restart aika-backend`. From Git Bash on your laptop, copying
+the value from your local `.env` without printing it:
+
+```bash
+KEY=$(grep '^OPENROUTER_API_KEY=' backend/.env | cut -d= -f2- | tr -d '\r"')
+printf '%s\n' "$KEY" | ssh -i /d/Devops/keys/ai-k8s-agent-key.pem ubuntu@<you>.duckdns.org \
+  'read -r KEY; F=~/The-AI-Kubernetes-Agent/backend/.env; cp $F $F.bak;
+   sed -i "/^OPENROUTER_API_KEY=/d" $F; echo "OPENROUTER_API_KEY=$KEY" >> $F;
+   sudo systemctl restart aika-backend; sleep 3; curl -s localhost:8000/health'
+```
+
+A Claude Pro subscription cannot replace this: the app needs an API key
+(OpenRouter, or an Anthropic API key with its own billing).
+
 **Pausing (e.g. saving free-tier hours)**: EC2 console → Stop instance.
 Everything (k3s, backend, Caddy) is systemd-enabled and comes back on Start
 by itself — the only manual step is updating DuckDNS with the instance's new
@@ -540,6 +593,10 @@ LLM call.
 | Site loads but sign-in fails | Check the browser devtools Network tab — if InsForge rejects the request by origin, add `https://<you>.duckdns.org` to the project's allowed origins in the InsForge dashboard |
 | Site loads, login works, but Investigate fails with a network error | Backend down — `systemctl status aika-backend`; or the `@api` block missing from the Caddyfile |
 | Agent logs `backend refused the connection: HTTP 200`, or removing a cluster does nothing | The `@api` matcher is missing `/agent/*` or `/clusters/*`, so the request reached the frontend instead of the backend |
+| Investigation shows "AI reasoning was unavailable: OpenRouter returned HTTP 402" | OpenRouter key out of credits — top up or swap the key (see "Changing the OpenRouter key") |
+| `curl ... \| bash` fails with `Invoke-WebRequest` or `&&` errors | Run in PowerShell — use Git Bash; the installer is a bash script |
+| Agent pod `ImagePullBackOff` right after a release | The **Publish agent image** workflow has not finished; wait, then `kubectl -n aika-system rollout restart deploy/aika-agent` |
+| Investigation of an agent cluster says `Forbidden` | Installed with `--namespaces` and a namespace lost its Role — re-run the installer with the same flags |
 | Diagnosis says cluster unreachable | `kubectl get nodes` on the instance; check `KUBECONFIG_PATH` in `backend/.env` and that `k3s.yaml` is mode 644 |
 | `kubectl` works for you but not for the service | k3s installed without `--write-kubeconfig-mode 644` — run `sudo chmod 644 /etc/rancher/k3s/k3s.yaml` |
 | Instance feels sluggish / random process deaths | Memory pressure — confirm swap is active (`free -h` should show 2 GB); never run `npm run build` on the server |

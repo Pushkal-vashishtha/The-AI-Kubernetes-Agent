@@ -104,6 +104,49 @@ kubectl delete namespace failure-lab
 - **History table** — every investigation persists (InsForge + RLS); reopen
   the dashboard and the past diagnoses are still there.
 
+## Headline beat: any cluster in 60 seconds
+
+The strongest moment in the demo: a cluster the backend has never seen,
+connected live, with nothing exposed. Use **Git Bash** (the installer is a bash
+script; PowerShell mangles it).
+
+**Before the demo** (not on camera):
+
+```bash
+docker start kubernetes-one-control-plane      # or: kind create cluster --name demo
+kubectl config use-context kind-kubernetes-one
+kubectl get ns aika-system                     # must be NotFound (uninstall leftovers first)
+kubectl create namespace shop
+kubectl -n shop run shop-web --image=nginx:does-not-exist
+```
+
+Check `https://ai-k8s-agent.duckdns.org/health` and that OpenRouter has
+credit (a 402 kills the AI step on stage).
+
+**On stage** (~60 s):
+
+1. Dashboard → **+ Add cluster** → name `laptop-kind` → **Create**. Say: *"this
+   token is shown once; the server keeps only its hash."*
+2. Copy the command, paste into Git Bash. While it runs, say: *"it creates a
+   read-only ServiceAccount and a pod that dials out over HTTPS — no inbound
+   ports, no kubeconfig leaves my laptop."*
+3. The card flips **Waiting for agent → Connected** live (realtime), and the
+   terminal prints **Cluster registered**.
+4. Click the card → the diagnosis names `shop-web` and the bad image tag.
+
+**Follow-ups if there's time:**
+
+- **Least privilege:** re-run the command with `--namespaces shop`, then
+  `kubectl auth can-i list secrets -n shop --as=system:serviceaccount:aika-system:aika-agent`
+  → `no`.
+- **Revocation:** hover the card → **Rotate**. The old agent is disconnected
+  immediately (`kubectl -n aika-system logs deploy/aika-agent` shows the 4001
+  close); re-run the new command to reconnect.
+- **Clean exit:** `curl -sSL https://ai-k8s-agent.duckdns.org/install.sh | bash -s -- --uninstall`,
+  then **×** on the card to revoke the token.
+
+**Afterwards:** `kubectl delete namespace shop`.
+
 ## Troubleshooting the demo itself
 
 | Symptom | Cause / fix |
@@ -111,6 +154,9 @@ kubectl delete namespace failure-lab
 | Diagnosis blames kube-system / node reboot | Cluster booted <10 min ago — wait for boot residue to age out (see Prerequisites) |
 | "Cluster unreachable" banner on kind | Backend running in Docker — run it locally with `npm run dev` |
 | Scenario pod never fails | You edited the manifest command via CLI args — always `kubectl apply` the YAML (PowerShell mangles `sh -c` args) |
+| Diagnosis shows "AI reasoning was unavailable: … HTTP 402" | OpenRouter out of credit — top up or swap the key on the server before the demo |
+| Install command fails with `Invoke-WebRequest` errors | Ran in PowerShell — use Git Bash |
+| Card stuck on **Waiting for agent** | `kubectl -n aika-system logs deploy/aika-agent`; a `token rejected` line means the card was rotated/removed — use a fresh command |
 | Diagnosis mixes two problems | Two scenarios applied at once — delete one, re-investigate |
 | Healthy cluster still shows issues > 0 | Recent warning events linger ~1 h; the diagnosis card will still say "No active issues detected" |
 

@@ -11,7 +11,8 @@
 #
 # What it creates (all named aika-agent, in namespace aika-system):
 #   Namespace, ServiceAccount, Secret (your token), Deployment,
-#   ClusterRole (get/list/watch only -- no write verbs anywhere), ClusterRoleBinding
+#   ClusterRole + ClusterRoleBinding (list, plus get on pods/log -- nothing else),
+#   or with --namespaces a Role + RoleBinding in each listed namespace
 set -euo pipefail
 
 # Substituted by the backend when it serves this script, so the one-liner
@@ -153,8 +154,9 @@ fi
 # Comma-separated, as the agent reads AIKA_NAMESPACES.
 SCOPED_CSV="$(printf '%s' "$SCOPED_NAMESPACES" | tr ' ' ',')"
 
-# Read-only. The only verbs anywhere in these rules are get, list and watch.
-# "nodes" is cluster-scoped, so only the cluster-wide role can have it; the
+# Read-only and exactly what the collector calls: "list" on each resource and
+# "get" on pods/log -- no watch, no Secrets/ConfigMaps. Widen only alongside a
+# collector change. "nodes" is cluster-scoped, so only the cluster-wide role can have it; the
 # agent uses it just to guess the distro and copes without.
 rbac() {
   if [ -z "$SCOPED_NAMESPACES" ]; then
@@ -167,11 +169,14 @@ metadata:
     app.kubernetes.io/name: $NAME
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "events", "services", "endpoints", "nodes"]
-    verbs: ["get", "list", "watch"]
+    resources: ["pods", "events", "services", "endpoints", "nodes"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets"]
-    verbs: ["get", "list", "watch"]
+    resources: ["deployments"]
+    verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -203,11 +208,14 @@ metadata:
     app.kubernetes.io/name: $NAME
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "events", "services", "endpoints"]
-    verbs: ["get", "list", "watch"]
+    resources: ["pods", "events", "services", "endpoints"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets"]
-    verbs: ["get", "list", "watch"]
+    resources: ["deployments"]
+    verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
