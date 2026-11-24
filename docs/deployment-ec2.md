@@ -417,6 +417,7 @@ loops, no restarts, just a pod stuck in `ImagePullBackOff` forever):
 
 ```bash
 cd ~/The-AI-Kubernetes-Agent
+kubectl create namespace failure-lab
 kubectl apply -f test-scenarios/02-imagepullbackoff.yaml
 kubectl get pods -n failure-lab   # wait until STATUS shows ImagePullBackOff
 ```
